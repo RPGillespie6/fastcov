@@ -17,6 +17,7 @@
         $ genhtml -o code_coverage report.info
 """
 
+import re
 import os
 import glob
 import json
@@ -37,7 +38,8 @@ def getGcovVersion(gcov):
     p = subprocess.Popen([gcov, "-v"], stdout=subprocess.PIPE)
     output = p.communicate()[0].decode('UTF-8')
     p.wait()
-    version = tuple(map(int, output.split("\n")[0].split()[-1].split(".")))
+    version_str = re.search(r'\s([\d.]+)\s', output.split("\n")[0]).group(1)
+    version = tuple(map(int, version_str.split(".")))
     return version
 
 def removeFiles(files):
@@ -74,7 +76,7 @@ def processGcdasPre9(cwd, gcov, jobs, gcda_files):
     chunk_size = min(MINIMUM_CHUNK_SIZE, int(len(gcda_files) / jobs) + 1)
 
     processes = []
-    shuffle(gcda_files) # improves performance by preventing any one gcov from bottlenecking on a list of sequential, expensive gcdas (?)
+    # shuffle(gcda_files) # improves performance by preventing any one gcov from bottlenecking on a list of sequential, expensive gcdas (?)
     for chunk in chunks(gcda_files, chunk_size):
         processes.append(subprocess.Popen([gcov, "-i"] + chunk, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
 

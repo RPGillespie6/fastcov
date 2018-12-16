@@ -15,6 +15,7 @@
         $ genhtml -o code_coverage report.info
 """
 
+import re
 import os
 import sys
 import glob
@@ -40,7 +41,8 @@ def getGcovVersion(gcov):
     p = subprocess.Popen([gcov, "-v"], stdout=subprocess.PIPE)
     output = p.communicate()[0].decode('UTF-8')
     p.wait()
-    version = tuple(map(int, output.split("\n")[0].split()[-1].split(".")))
+    version_str = re.search(r'\s([\d.]+)\s', output.split("\n")[0]).group(1)
+    version = tuple(map(int, version_str.split(".")))
     return version
 
 def removeFiles(files):
@@ -61,8 +63,8 @@ def getGcdaFiles(cwd, gcda_files):
     return gcda_files
 
 def gcovWorker(cwd, gcov, files, chunk, exclude):
-    p = subprocess.Popen([gcov, "-it"] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL))
-    for line in iter(process.stdout.readline, b''):
+    p = subprocess.Popen([gcov, "-it"] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    for line in iter(p.stdout.readline, b''):
         intermediate_json = json.loads(line.decode(sys.stdout.encoding))
         intermediate_json_files = processGcovs(intermediate_json["files"], exclude)
         for f in intermediate_json_files:
@@ -81,29 +83,41 @@ def processGcdas(cwd, gcov, jobs, gcda_files, exclude):
         threads.append(t)
         t.start()
 
-    log("Spawned %d threads each processing ~%d gcda files" % (len(threads), chunk_size))
+    log("Spawned %d gcov processes each processing %d gcda files" % (len(threads), chunk_size))
     for t in threads:
         t.join()
+
+    return intermediate_json_files
+
+def processGcov(gcov, files, exclude):
+    for ex in exclude:
+        if ex in gcov["file"]:
+            return
+    files.append(gcov)
 
 def processGcovs(gcov_files, exclude):
     files = []
     for gcov in gcov_files:
-        processGcov(files, gcov, exclude)
+        processGcov(gcov, files, exclude)
     return files
 
 def dumpToLcovInfo(intermediate, output):
     with open(output, "w") as f:
         for file in intermediate:
             f.write("SF:%s\n" % file["file"])
+            fn_miss = 0
             for function in file["functions"]:
                 f.write("FN:%s,%s\n" % (function["start_line"], function["name"]))
                 f.write("FNDA:%s,%s\n" % (function["execution_count"], function["name"]))
+                fn_miss += int(not function["execution_count"] == 0)
             f.write("FNF:%s\n" % len(file["functions"]))
-            f.write("FNH:%s\n" % file["functions_hit"])
+            f.write("FNH:%s\n" % (len(file["functions"]) - fn_miss))
+            line_miss = 0
             for line in file["lines"]:
                 f.write("DA:%s,%s\n" % (line["line_number"], line["count"]))
+                line_miss += int(not line["count"] == 0)
             f.write("LF:%s\n" % len(file["lines"]))
-            f.write("LH:%s\n" % file["lines_hit"])
+            f.write("LH:%s\n" % (len(file["lines"]) - line_miss))
             f.write("end_of_record\n")
 
 def dumpToGcovJson(intermediate, output):
@@ -124,7 +138,7 @@ def main(args):
     gcda_files = getGcdaFiles(args.directory, args.gcda_files)
     log("%d .gcda files" % len(gcda_files))
 
-    if exclude:
+    if args.excludepre:
         gcda_files = getFilteredGcdaFiles(gcda_files, args.excludepre)
         log("%d .gcda files after filtering" % len(gcda_files))
 
