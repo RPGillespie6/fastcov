@@ -2,6 +2,8 @@
 """
     Author: Bryan Gillespie
 
+    Legacy version... supports versions 7.1.0 <= GCC < 9.0.0
+
     A massively parallel gcov wrapper for generating intermediate coverage formats fast
 
     The goal of fastcov is to generate code coverage intermediate formats as fast as possible
@@ -16,20 +18,15 @@
 """
 
 import os
-import sys
 import glob
 import json
 import argparse
-import threading
 import subprocess
 import multiprocessing
+from random import shuffle
 
-MINIMUM_GCOV = (9,0,0)
+MINIMUM_GCOV = (7,1,0)
 MINIMUM_CHUNK_SIZE = 10
-
-# Interesting metrics
-GCOVS_TOTAL = []
-GCOVS_SKIPPED = []
 
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
@@ -55,40 +52,94 @@ def getFilteredGcdaFiles(gcda_files, exclude):
         return True
     return list(filter(excludeGcda, gcda_files))
 
-def getGcdaFiles(cwd, gcda_files):
+def getGcdaFiles(cwd, gcda_files, exclude):
     if not gcda_files:
         gcda_files = glob.glob(os.path.join(cwd, "**/*.gcda"), recursive=True)
+    if exclude:
+        return getFilteredGcdaFiles(gcda_files, exclude)
     return gcda_files
 
-def gcovWorker(cwd, gcov, files, chunk, exclude):
-    p = subprocess.Popen([gcov, "-it"] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL))
-    for line in iter(process.stdout.readline, b''):
-        intermediate_json = json.loads(line.decode(sys.stdout.encoding))
-        intermediate_json_files = processGcovs(intermediate_json["files"], exclude)
-        for f in intermediate_json_files:
-            files.append(f) #thread safe
-        GCOVS_TOTAL.append(len(intermediate_json["files"]))
-        GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
-    p.wait()
+def getGcovFiles(cwd):
+    return glob.glob(os.path.join(cwd, "*.gcov"))
 
-def processGcdas(cwd, gcov, jobs, gcda_files, exclude):
+def filterGcovFiles(gcov):
+    with open(gcov) as f:
+        path = f.readline()[5:]
+        for ex in args.exclude:
+            if ex in path:
+                return False
+        return True
+
+def processGcdasPre9(cwd, gcov, jobs, gcda_files):
     chunk_size = min(MINIMUM_CHUNK_SIZE, int(len(gcda_files) / jobs) + 1)
 
-    threads = []
-    intermediate_json_files = []
+    processes = []
+    shuffle(gcda_files) # improves performance by preventing any one gcov from bottlenecking on a list of sequential, expensive gcdas (?)
     for chunk in chunks(gcda_files, chunk_size):
-        t = threading.Thread(target=gcovWorker, args=(cwd, gcov, intermediate_json_files, chunk, exclude))
-        threads.append(t)
-        t.start()
+        processes.append(subprocess.Popen([gcov, "-i"] + chunk, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
 
-    log("Spawned %d threads each processing ~%d gcda files" % (len(threads), chunk_size))
-    for t in threads:
-        t.join()
+    for p in processes:
+        p.wait()
+
+def processGcdasPre9Accurate(cwd, gcov, gcda_files, exclude):
+    intermediate_json_files = []
+    for gcda in gcda_files:
+        subprocess.Popen([gcov, "-i", gcda], cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).wait()
+        gcov_files = getGcovFiles(cwd)
+        intermediate_json_files += processGcovs(gcov_files, exclude)
+        removeFiles(gcov_files)
+    return intermediate_json_files
+
+def processGcovLine(file, line):
+    line_type, data = line.split(":", 1)
+    if line_type == "lcount":
+        num, count = data.split(",")
+        hit = (count != 0)
+        file["lines_hit"] += int(hit)
+        file["lines"].append({
+            "branches": [],
+            "line_number": num,
+            "count": count,
+            "unexecuted_block": not hit
+        })
+    elif line_type == "function":
+        num, count, name = data.split(",")
+        hit = (count != 0)
+        file["functions_hit"] += int(hit)
+        file["functions"].append({
+            "name": name,
+            "execution_count": count,
+            "start_line": num,
+            "end_line": None,
+            "blocks": None,
+            "blocks_executed": None,
+            "demangled_name": None
+        })
+
+def processGcov(files, gcov, exclude):
+    with open(gcov) as f:
+        path = f.readline()[5:].rstrip()
+        for ex in exclude:
+            if ex in path:
+                return False
+        file = {
+            "file": path,
+            "functions": [],
+            "functions_hit": 0,
+            "lines": [],
+            "lines_hit": 0
+        }
+        for line in f:
+            processGcovLine(file, line.rstrip())
+    files.append(file)
+    return True
 
 def processGcovs(gcov_files, exclude):
     files = []
+    filtered = 0
     for gcov in gcov_files:
-        processGcov(files, gcov, exclude)
+        filtered += int(not processGcov(files, gcov, exclude))
+    print("Skipped %d .gcov files" % filtered)
     return files
 
 def dumpToLcovInfo(intermediate, output):
@@ -110,49 +161,45 @@ def dumpToGcovJson(intermediate, output):
     with open(output, "w") as f:
         json.dump(intermediate, f)
 
-def log(line):
-    if not args.quiet:
-        print(line)
-
 def main(args):
-    # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
+    # Need at least gcov 7.1.0 because of bug not allowing -i in conjunction with multiple files
+    # See: https://github.com/gcc-mirror/gcc/commit/41da7513d5aaaff3a5651b40edeccc1e32ea785a
     current_gcov_version = getGcovVersion(args.gcov)
     if current_gcov_version < MINIMUM_GCOV:
-        sys.stderr.write("Minimum gcov version {} required, found {}\n".format(".".join(map(str, MINIMUM_GCOV)), ".".join(map(str, current_gcov_version))))
+        print("Minimum gcov version {} required, found {}".format(".".join(map(str, MINIMUM_GCOV)), ".".join(map(str, current_gcov_version))))
         exit(1)
 
-    gcda_files = getGcdaFiles(args.directory, args.gcda_files)
-    log("%d .gcda files" % len(gcda_files))
-
-    if exclude:
-        gcda_files = getFilteredGcdaFiles(gcda_files, args.excludepre)
-        log("%d .gcda files after filtering" % len(gcda_files))
+    gcda_files = getGcdaFiles(args.directory, args.gcda_files, args.excludepre)
+    print("Found %d .gcda files" % len(gcda_files))
 
     # We "zero" the "counters" by simply deleting all gcda files
     if args.zerocounters:
         removeFiles(gcda_files)
-        log("%d .gcda files removed" % len(gcda_files))
+        print("Removed %d .gcda files" % len(gcda_files))
         return
 
-    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, args.excludepost)
+    # If we are less than gcov 9.0.0, convert .gcov files to GCOV 9 JSON format
+    processGcdasPre9(args.cdirectory, args.gcov, args.jobs, gcda_files)
+    gcov_files = getGcovFiles(args.cdirectory)
 
-    gcov_total = sum(GCOVS_TOTAL)
-    gcov_skipped = sum(GCOVS_SKIPPED)
-    log("%d .gcov files generated by gcov" % gcov_total)
-    log("%d .gcov files processed by fastcov (%d skipped)" % (gcov_total - gcov_skipped, gcov_skipped))
+    print("Found %d .gcov files" % len(gcov_files))
+
+    intermediate_json_files = processGcovs(gcov_files, args.excludepost)
+    removeFiles(gcov_files)
+
+    intermediate_json_files += processGcdasPre9Accurate(args.cdirectory, args.gcov, args.gcda_files_accurate, args.excludepost)
 
     if args.lcov:
         dumpToLcovInfo(intermediate_json_files, args.output)
-        log("Created lcov info file '%s'" % args.output)
     else:
         dumpToGcovJson(intermediate_json_files, args.output)
-        log("Created gcov json file '%s'" % args.output)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='A parallel gcov wrapper for fast coverage report generation')
     parser.add_argument('-z', '--zerocounters', dest='zerocounters', action="store_true", help='Recursively delete all gcda files')
 
     parser.add_argument('-f', '--gcda-files', dest='gcda_files', nargs="+", default=[], help='Specify exactly which gcda files should be processed instead of recursivly searching the search directory.')
+    parser.add_argument('-F', '--gcda-files-accurate', dest='gcda_files_accurate', nargs="+", default=[], help='(< gcov 9.0.0) Get accurate header coverage information for just these. These files cannot be processed in parallel')
     parser.add_argument('-E', '--exclude-gcda', dest='excludepre', nargs="+", default=[], help='.gcda filter - Exclude gcda files from being processed via simple find matching (not regex)')
     parser.add_argument('-e', '--exclude-gcov', dest='excludepost', nargs="+", default=[], help='.gcov filter - Exclude gcov files from being processed via simple find matching (not regex)')
 
@@ -165,6 +212,5 @@ if __name__ == '__main__':
 
     parser.add_argument('-o', '--output', dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
     parser.add_argument('-i', '--lcov', dest='lcov', action="store_true", help='Output in lcov info format instead of gcov json')
-    parser.add_argument('-q', '--quiet', dest='quiet', action="store_true", help='Suppress output to stdout')
     args = parser.parse_args()
     main(args)
