@@ -11,6 +11,8 @@
 
     Sample Usage:
         $ cd build_dir
+        $ ./fastcov.py --zerocounters
+        $ <run unit tests>
         $ ./fastcov.py --exclude-gcov /usr/include --lcov -o report.info
         $ genhtml -o code_coverage report.info
 """
@@ -68,13 +70,13 @@ def gcovWorker(cwd, gcov, files, chunk, exclude):
         intermediate_json = json.loads(line.decode(sys.stdout.encoding))
         intermediate_json_files = processGcovs(intermediate_json["files"], exclude)
         for f in intermediate_json_files:
-            files.append(f) #thread safe
+            files.append(f) #thread safe, there might be a better way to do this though
         GCOVS_TOTAL.append(len(intermediate_json["files"]))
         GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
     p.wait()
 
 def processGcdas(cwd, gcov, jobs, gcda_files, exclude):
-    chunk_size = min(MINIMUM_CHUNK_SIZE, int(len(gcda_files) / jobs) + 1)
+    chunk_size = max(MINIMUM_CHUNK_SIZE, int(len(gcda_files) / jobs) + 1)
 
     threads = []
     intermediate_json_files = []
@@ -83,7 +85,7 @@ def processGcdas(cwd, gcov, jobs, gcda_files, exclude):
         threads.append(t)
         t.start()
 
-    log("Spawned %d gcov processes each processing %d gcda files" % (len(threads), chunk_size))
+    log("Spawned %d gcov processes each processing at most %d gcda files" % (len(threads), chunk_size))
     for t in threads:
         t.join()
 
@@ -101,10 +103,14 @@ def processGcovs(gcov_files, exclude):
         processGcov(gcov, files, exclude)
     return files
 
-def dumpToLcovInfo(intermediate, output):
+def dumpToLcovInfo(cwd, intermediate, output):
     with open(output, "w") as f:
         for file in intermediate:
-            f.write("SF:%s\n" % file["file"])
+            #Convert to absolute path so it plays nice with genhtml
+            sf = file["file"]
+            if not os.path.isabs(file["file"]):
+                sf = os.path.abspath(os.path.join(cwd, file["file"]))
+            f.write("SF:%s\n" % sf)
             fn_miss = 0
             for function in file["functions"]:
                 f.write("FN:%s,%s\n" % (function["start_line"], function["name"]))
@@ -156,7 +162,7 @@ def main(args):
     log("%d .gcov files processed by fastcov (%d skipped)" % (gcov_total - gcov_skipped, gcov_skipped))
 
     if args.lcov:
-        dumpToLcovInfo(intermediate_json_files, args.output)
+        dumpToLcovInfo(args.cdirectory, intermediate_json_files, args.output)
         log("Created lcov info file '%s'" % args.output)
     else:
         dumpToGcovJson(intermediate_json_files, args.output)
@@ -175,7 +181,6 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--search-directory', dest='directory', default=".", help='Base directory to recursively search for gcda files (default: .)')
     parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default=".", help='Base directory compiler was invoked from (default: .)')
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: %d).' % multiprocessing.cpu_count())
-
 
     parser.add_argument('-o', '--output', dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
     parser.add_argument('-i', '--lcov', dest='lcov', action="store_true", help='Output in lcov info format instead of gcov json')
