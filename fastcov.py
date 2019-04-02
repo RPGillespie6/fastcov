@@ -13,7 +13,7 @@
         $ cd build_dir
         $ ./fastcov.py --zerocounters
         $ <run unit tests>
-        $ ./fastcov.py --exclude-gcov /usr/include --lcov -o report.info
+        $ ./fastcov.py --exclude-gcov /usr/include test/ --lcov -o report.info
         $ genhtml -o code_coverage report.info
 """
 
@@ -64,8 +64,12 @@ def getGcdaFiles(cwd, gcda_files):
         gcda_files = glob.glob(os.path.join(cwd, "**/*.gcda"), recursive=True)
     return gcda_files
 
-def gcovWorker(cwd, gcov, files, chunk, exclude):
-    p = subprocess.Popen([gcov, "-it"] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+def gcovWorker(cwd, gcov, files, chunk, exclude, branch_coverage):
+    gcov_args = "-it"
+    if branch_coverage:
+        gcov_args += "b"
+
+    p = subprocess.Popen([gcov, gcov_args] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     for line in iter(p.stdout.readline, b''):
         intermediate_json = json.loads(line.decode(sys.stdout.encoding))
         intermediate_json_files = processGcovs(intermediate_json["files"], exclude)
@@ -75,13 +79,13 @@ def gcovWorker(cwd, gcov, files, chunk, exclude):
         GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
     p.wait()
 
-def processGcdas(cwd, gcov, jobs, gcda_files, exclude):
+def processGcdas(cwd, gcov, jobs, gcda_files, exclude, branch_coverage):
     chunk_size = max(MINIMUM_CHUNK_SIZE, int(len(gcda_files) / jobs) + 1)
 
     threads = []
     intermediate_json_files = []
     for chunk in chunks(gcda_files, chunk_size):
-        t = threading.Thread(target=gcovWorker, args=(cwd, gcov, intermediate_json_files, chunk, exclude))
+        t = threading.Thread(target=gcovWorker, args=(cwd, gcov, intermediate_json_files, chunk, exclude, branch_coverage))
         threads.append(t)
         t.start()
 
@@ -103,27 +107,46 @@ def processGcovs(gcov_files, exclude):
         processGcov(gcov, files, exclude)
     return files
 
-def dumpToLcovInfo(cwd, intermediate, output):
+def dumpBranchCoverageToLcovInfo(f, source):
+    branch_miss  = 0
+    branch_total = 0
+    for line in source["lines"]:
+        if not line["branches"]:
+            continue
+        branch_total += len(line["branches"])
+        for i, branch in enumerate(line["branches"]):
+            #Branch (<line number>, <block number>, <branch number>, <taken>)
+            f.write("BRDA:%d,%d,%d,%d\n" % (line["line_number"], 0, i, branch["count"]))
+            branch_miss += int(branch["count"] == 0)
+    f.write("BRF:%d\n" % branch_total)                 #Branches Found
+    f.write("BRH:%d\n" % (branch_total - branch_miss)) #Branches Hit
+
+def dumpToLcovInfo(cwd, intermediate, output, branch_coverage):
     with open(output, "w") as f:
-        for file in intermediate:
+        for source in intermediate:
             #Convert to absolute path so it plays nice with genhtml
-            sf = file["file"]
-            if not os.path.isabs(file["file"]):
-                sf = os.path.abspath(os.path.join(cwd, file["file"]))
-            f.write("SF:%s\n" % sf)
+            sf = source["file"]
+            if not os.path.isabs(source["file"]):
+                sf = os.path.abspath(os.path.join(cwd, source["file"]))
+            f.write("SF:%s\n" % sf) #Source File
+
             fn_miss = 0
-            for function in file["functions"]:
-                f.write("FN:%s,%s\n" % (function["start_line"], function["name"]))
-                f.write("FNDA:%s,%s\n" % (function["execution_count"], function["name"]))
-                fn_miss += int(not function["execution_count"] == 0)
-            f.write("FNF:%s\n" % len(file["functions"]))
-            f.write("FNH:%s\n" % (len(file["functions"]) - fn_miss))
+            for function in source["functions"]:
+                f.write("FN:%d,%s\n" % (function["start_line"], function["name"]))          #Function Start Line
+                f.write("FNDA:%d,%s\n" % (function["execution_count"], function["name"]))   #Function Hits
+                fn_miss += int(function["execution_count"] == 0)
+            f.write("FNF:%d\n" % len(source["functions"]))                #Functions Found
+            f.write("FNH:%d\n" % (len(source["functions"]) - fn_miss))    #Functions Hit
+
+            if branch_coverage:
+                dumpBranchCoverageToLcovInfo(f, source)
+
             line_miss = 0
-            for line in file["lines"]:
-                f.write("DA:%s,%s\n" % (line["line_number"], line["count"]))
-                line_miss += int(not line["count"] == 0)
-            f.write("LF:%s\n" % len(file["lines"]))
-            f.write("LH:%s\n" % (len(file["lines"]) - line_miss))
+            for line in source["lines"]:
+                f.write("DA:%d,%d\n" % (line["line_number"], line["count"])) #Line
+                line_miss += int(line["count"] == 0)
+            f.write("LF:%d\n" % len(source["lines"]))                 #Lines Found
+            f.write("LH:%d\n" % (len(source["lines"]) - line_miss))   #Lines Hit
             f.write("end_of_record\n")
 
 def dumpToGcovJson(intermediate, output):
@@ -154,7 +177,7 @@ def main(args):
         log("%d .gcda files removed" % len(gcda_files))
         return
 
-    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, args.excludepost)
+    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, args.excludepost, args.branchcoverage)
 
     gcov_total = sum(GCOVS_TOTAL)
     gcov_skipped = sum(GCOVS_SKIPPED)
@@ -162,7 +185,7 @@ def main(args):
     log("%d .gcov files processed by fastcov (%d skipped)" % (gcov_total - gcov_skipped, gcov_skipped))
 
     if args.lcov:
-        dumpToLcovInfo(args.cdirectory, intermediate_json_files, args.output)
+        dumpToLcovInfo(args.cdirectory, intermediate_json_files, args.output, args.branchcoverage)
         log("Created lcov info file '%s'" % args.output)
     else:
         dumpToGcovJson(intermediate_json_files, args.output)
@@ -171,6 +194,8 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='A parallel gcov wrapper for fast coverage report generation')
     parser.add_argument('-z', '--zerocounters', dest='zerocounters', action="store_true", help='Recursively delete all gcda files')
+
+    parser.add_argument('-b', '--branch-coverage', dest='branchcoverage', action="store_true", help='Include branch counts in the coverage report')
 
     parser.add_argument('-f', '--gcda-files', dest='gcda_files', nargs="+", default=[], help='Specify exactly which gcda files should be processed instead of recursivly searching the search directory.')
     parser.add_argument('-E', '--exclude-gcda', dest='excludepre', nargs="+", default=[], help='.gcda filter - Exclude gcda files from being processed via simple find matching (not regex)')
