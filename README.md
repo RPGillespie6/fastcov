@@ -9,29 +9,58 @@ In order to achieve the massive speed gains, a few constraints apply:
 
 1. GCC version >= 9.0.0
 
-These versions of GCOV have support for JSON intermediate format as well as streaming report data straight to stdout
+These versions of GCOV have support for JSON intermediate format as well as streaming report data straight to stdout. This second feature (the ability for gcov to stream report data to stdout) is critical - without it, fastcov cannot run multiple instances of gcov in parallel without loss of correctness.
+
+Since GCC 9 has not officially released, the current easiest way (in my opinion) to try out fastcov is to use the fastcov docker image, which has the latest versions of the GCC 9 compilers, Python3, and CMake inside:
+
+```bash
+docker pull rpgillespie6/fastcov:latest
+```
+
+If you need other dependencies, just modify the Dockerfile and rebuild.
 
 2. Object files must be either be built:
 
 - Using absolute paths for all `-I` flags passed to the compiler
+
+or
+
 - Invoking the compiler from the same root directory
 
-If you use CMake, you are almost certainly satisfying the second constraint (unless you care about `ExternalProject` coverage).
+If you use CMake, you are almost certainly satisfying this second constraint (unless you care about `ExternalProject` coverage).
 
-## Sample Usage:
+## Quick Start
+
+Assuming you now have access to GCC 9, fastcov is easy to use:
+
+(Optional - if using docker image):
+```bash
+$ docker run -it --rm -v ${PWD}:/work -w /work -u $(id -u ${USER}):$(id -g ${USER}) rpgillespie6/fastcov
+$ <build project>
+```
+
+Once the project is built:
 ```bash
 $ cd build_dir
 $ fastcov.py --zerocounters
 $ <run unit tests>
-$ fastcov.py --exclude /usr/include --lcov -o report.info
+$ fastcov.py --exclude-gcov /usr/include --lcov -o report.info
 $ genhtml -o code_coverage report.info
 ```
+
+Note that many of the options (such as `--exclude-gcov`) can take a list of parameters. For example, you could do something like:
+
+```bash
+$ fastcov.py --exclude-gcov /usr/include test/ ext/ --lcov -o report.info
+```
+
+Check out `fastcov.py --help` for more features and filtering options!
 
 ## Legacy fastcov
 
 It is possible to reap most of the benefits of fastcov for GCC version < 9.0.0 and >= 7.1.0. However, there will be a *potential* header file loss of correctness.
 
-`fastcov_legacy.py` can be used with pre GCC-9 down to GCC 7.1.0 but with a few penalties due to gcov limitations. This is because running gcov in parallel generates .gcov header reports in parallel which overwrite each other. This isn't a problem unless your header files have actual logic (i.e. header only library) that you want to measure coverage for. Use the `-F` flag to specify which gcda files should not be run in parallel in order to capture accurate header file data just for those. I don't plan on supporting `fastcov_legacy.py` aside from basic bug fixes.
+`fastcov_legacy.py` can be used with pre GCC-9 down to GCC 7.1.0 but with a few penalties due to gcov limitations. This is because running gcov in parallel generates .gcov header reports in parallel which overwrite each other. This isn't a problem unless your header files have actual logic (i.e. header only library) that you want to measure coverage for. Use the `-F` flag to specify which gcda files should not be run in parallel in order to capture accurate header file data just for those. I don't plan on supporting `fastcov_legacy.py` at all (PRs welcome, though).
 
 ## Benchmarks
 
