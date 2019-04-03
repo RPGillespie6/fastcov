@@ -44,14 +44,14 @@ Once the project is built:
 $ cd build_dir
 $ fastcov.py --zerocounters
 $ <run unit tests>
-$ fastcov.py --exclude-gcov /usr/include --lcov -o report.info
+$ fastcov.py --exclude /usr/include --lcov -o report.info
 $ genhtml -o code_coverage report.info
 ```
 
-Note that many of the options (such as `--exclude-gcov`) can take a list of parameters. For example, you could do something like:
+Note that many of the options (such as `--exclude`) can take a list of parameters. For example, you could do something like:
 
 ```bash
-$ fastcov.py --exclude-gcov /usr/include test/ ext/ --lcov -o report.info
+$ fastcov.py --exclude /usr/include test/ ext/ --lcov -o report.info
 ```
 
 Check out `fastcov.py --help` for more features and filtering options!
