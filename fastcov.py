@@ -116,7 +116,7 @@ def dumpBranchCoverageToLcovInfo(f, source):
         branch_total += len(line["branches"])
         for i, branch in enumerate(line["branches"]):
             #Branch (<line number>, <block number>, <branch number>, <taken>)
-            f.write("BRDA:%d,%d,%d,%d\n" % (line["line_number"], 0, i, branch["count"]))
+            f.write("BRDA:%d,%d,%d,%d\n" % (line["line_number"], int(i/2), i, branch["count"]))
             branch_miss += int(branch["count"] == 0)
     f.write("BRF:%d\n" % branch_total)                 #Branches Found
     f.write("BRH:%d\n" % (branch_total - branch_miss)) #Branches Hit
