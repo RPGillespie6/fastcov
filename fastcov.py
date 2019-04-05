@@ -133,47 +133,86 @@ def processGcovs(cwd, gcov_files, gcov_filter_options):
         processGcov(cwd, gcov, files, gcov_filter_options)
     return files
 
-def dumpBranchCoverageToLcovInfo(f, source):
+def dumpBranchCoverageToLcovInfo(f, branches):
     branch_miss  = 0
-    branch_total = 0
-    for line in source["lines"]:
-        if not line["branches"]:
-            continue
-        branch_total += len(line["branches"])
-        for i, branch in enumerate(line["branches"]):
+    for line_num, branch_counts in branches.items():
+        for i, count in enumerate(branch_counts):
             #Branch (<line number>, <block number>, <branch number>, <taken>)
-            f.write("BRDA:%d,%d,%d,%d\n" % (line["line_number"], int(i/2), i, branch["count"]))
-            branch_miss += int(branch["count"] == 0)
-    f.write("BRF:%d\n" % branch_total)                 #Branches Found
-    f.write("BRH:%d\n" % (branch_total - branch_miss)) #Branches Hit
+            f.write("BRDA:%s,%d,%d,%d\n" % (line_num, int(i/2), i, count))
+            branch_miss += int(count == 0)
+    f.write("BRF:%d\n" % len(branches))                 #Branches Found
+    f.write("BRH:%d\n" % (len(branches) - branch_miss)) #Branches Hit
 
-def dumpToLcovInfo(cwd, intermediate, output, branch_coverage):
+def dumpToLcovInfo(fastcov_json, output):
     with open(output, "w") as f:
-        for source in intermediate:
-            #Convert to absolute path so it plays nice with genhtml
-            sf = source["file"]
-            if not os.path.isabs(source["file"]):
-                sf = os.path.abspath(os.path.join(cwd, source["file"]))
+        for sf, data in fastcov_json["sources"].items():
             f.write("SF:%s\n" % sf) #Source File
 
             fn_miss = 0
-            for function in source["functions"]:
-                f.write("FN:%d,%s\n" % (function["start_line"], function["name"]))          #Function Start Line
-                f.write("FNDA:%d,%s\n" % (function["execution_count"], function["name"]))   #Function Hits
-                fn_miss += int(function["execution_count"] == 0)
-            f.write("FNF:%d\n" % len(source["functions"]))                #Functions Found
-            f.write("FNH:%d\n" % (len(source["functions"]) - fn_miss))    #Functions Hit
+            for function, fdata in data["functions"].items():
+                f.write("FN:%d,%s\n" % (fdata["start_line"], function))          #Function Start Line
+                f.write("FNDA:%d,%s\n" % (fdata["execution_count"], function))   #Function Hits
+                fn_miss += int(fdata["execution_count"] == 0)
+            f.write("FNF:%d\n" % len(data["functions"]))                #Functions Found
+            f.write("FNH:%d\n" % (len(data["functions"]) - fn_miss))    #Functions Hit
 
-            if branch_coverage:
-                dumpBranchCoverageToLcovInfo(f, source)
+            if data["branches"]:
+                dumpBranchCoverageToLcovInfo(f, data["branches"])
 
             line_miss = 0
-            for line in source["lines"]:
-                f.write("DA:%d,%d\n" % (line["line_number"], line["count"])) #Line
-                line_miss += int(line["count"] == 0)
-            f.write("LF:%d\n" % len(source["lines"]))                 #Lines Found
-            f.write("LH:%d\n" % (len(source["lines"]) - line_miss))   #Lines Hit
+            for line_num, count in data["lines"].items():
+                f.write("DA:%s,%d\n" % (line_num, count)) #Line
+                line_miss += int(count == 0)
+            f.write("LF:%d\n" % len(data["lines"]))                 #Lines Found
+            f.write("LH:%d\n" % (len(data["lines"]) - line_miss))   #Lines Hit
             f.write("end_of_record\n")
+
+def exclMarkerWorker(fastcov_sources, chunk):
+    for source in chunk:
+        # If there are no covered lines, skip
+        if not fastcov_sources[source]["lines"]:
+            continue
+
+        start_line = 0
+        end_line = 0
+        with open(source) as f:
+            for i, line in enumerate(f, 1): #Start enumeration at line 1
+                if not "LCOV_EXCL" in line:
+                    continue
+
+                if "LCOV_EXCL_LINE" in line:
+                    if str(i) in fastcov_sources[source]["lines"]:
+                        del fastcov_sources[source]["lines"][str(i)]
+                    if str(i) in fastcov_sources[source]["branches"]:
+                        del fastcov_sources[source]["branches"][str(i)]
+                elif "LCOV_EXCL_START" in line:
+                    start_line = i
+                elif "LCOV_EXCL_STOP" in line:
+                    end_line = i
+
+                    if not start_line:
+                        end_line = 0
+                        continue
+
+                    for key in ["lines", "branches"]:
+                        for line_num in list(fastcov_sources[source][key].keys()):
+                            if int(line_num) <= end_line and int(line_num) >= start_line:
+                                del fastcov_sources[source][key][line_num]
+
+                    start_line = end_line = 0
+
+def scanExclusionMarkers(fastcov_json, jobs):
+    chunk_size = max(MINIMUM_CHUNK_SIZE, int(len(fastcov_json["sources"]) / jobs) + 1)
+
+    threads = []
+    for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
+        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk))
+        threads.append(t)
+        t.start()
+
+    log("Spawned %d threads each scanning at most %d source files" % (len(threads), chunk_size))
+    for t in threads:
+        t.join()
 
 def distillFunction(function_raw, functions):
     function_name = function_raw["name"]
@@ -278,8 +317,8 @@ def main(args):
 
     # Dump to desired file format
     if args.lcov:
-        # scanExclusionMarkers(fastcov_json)
-        dumpToLcovInfo(args.cdirectory, intermediate_json_files, args.output, args.branchcoverage)
+        scanExclusionMarkers(fastcov_json, args.jobs)
+        dumpToLcovInfo(fastcov_json, args.output)
         log("Created lcov info file '%s'" % args.output)
     elif args.gcov_raw:
         dumpToJson(intermediate_json_files, args.output)
