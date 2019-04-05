@@ -39,13 +39,20 @@ def chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i + n]
 
+def parseVersionFromLine(version_str):
+    """Given a string containing a dotted integer version, parse out integers and return as tuple"""
+    version = re.search(r'(\d+\.\d+\.\d+)[^\.]', version_str)
+
+    if not version:
+        return (0,0,0)
+
+    return tuple(map(int, version.group(1).split(".")))
+
 def getGcovVersion(gcov):
     p = subprocess.Popen([gcov, "-v"], stdout=subprocess.PIPE)
     output = p.communicate()[0].decode('UTF-8')
     p.wait()
-    version_str = re.search(r'\s([\d.]+)\s', output.split("\n")[0]).group(1)
-    version = tuple(map(int, version_str.split(".")))
-    return version
+    return parseVersionFromLine(output.split("\n")[0])
 
 def removeFiles(files):
     for file in files:
@@ -72,7 +79,7 @@ def gcovWorker(cwd, gcov, files, chunk, gcov_filter_options, branch_coverage):
     p = subprocess.Popen([gcov, gcov_args] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     for line in iter(p.stdout.readline, b''):
         intermediate_json = json.loads(line.decode(sys.stdout.encoding))
-        intermediate_json_files = processGcovs(intermediate_json["files"], gcov_filter_options)
+        intermediate_json_files = processGcovs(cwd, intermediate_json["files"], gcov_filter_options)
         for f in intermediate_json_files:
             files.append(f) #thread safe, there might be a better way to do this though
         GCOVS_TOTAL.append(len(intermediate_json["files"]))
@@ -95,11 +102,13 @@ def processGcdas(cwd, gcov, jobs, gcda_files, gcov_filter_options, branch_covera
 
     return intermediate_json_files
 
-def processGcov(gcov, files, gcov_filter_options):
+def processGcov(cwd, gcov, files, gcov_filter_options):
+    # Add absolute path
+    gcov["file_abs"] = os.path.abspath(os.path.join(cwd, gcov["file"]))
+
     # If explicit sources were passed, check for match
-    source_file = os.path.abspath(gcov["file"])
     if gcov_filter_options["sources"]:
-        if source_file in gcov_filter_options["sources"]:
+        if gcov["file_abs"] in gcov_filter_options["sources"]:
             files.append(gcov)
         return
 
@@ -118,10 +127,10 @@ def processGcov(gcov, files, gcov_filter_options):
 
     files.append(gcov)
 
-def processGcovs(gcov_files, gcov_filter_options):
+def processGcovs(cwd, gcov_files, gcov_filter_options):
     files = []
     for gcov in gcov_files:
-        processGcov(gcov, files, gcov_filter_options)
+        processGcov(cwd, gcov, files, gcov_filter_options)
     return files
 
 def dumpBranchCoverageToLcovInfo(f, source):
@@ -166,7 +175,58 @@ def dumpToLcovInfo(cwd, intermediate, output, branch_coverage):
             f.write("LH:%d\n" % (len(source["lines"]) - line_miss))   #Lines Hit
             f.write("end_of_record\n")
 
-def dumpToGcovJson(intermediate, output):
+def distillFunction(function_raw, functions):
+    function_name = function_raw["name"]
+    if function_name not in functions:
+        functions[function_name] = {
+            "start_line": function_raw["start_line"],
+            "execution_count": function_raw["execution_count"]
+        }
+    else:
+        functions[function_name]["execution_count"] += function_raw["execution_count"]
+
+def distillLine(line_raw, lines, branches):
+    line_number = str(line_raw["line_number"])
+    if line_number not in lines:
+        lines[line_number] = line_raw["count"]
+    else:
+        lines[line_number] += line_raw["count"]
+
+    for i, branch in enumerate(line_raw["branches"]):
+        if line_number not in branches:
+            branches[line_number] = []
+        blen = len(branches[line_number])
+        glen = len(line_raw["branches"])
+        if blen < glen:
+            branches[line_number] += [0] * (glen - blen)
+        branches[line_number][i] += branch["count"]
+
+def distillSource(source_raw, sources):
+    source_name = source_raw["file_abs"]
+    if source_name not in sources:
+        sources[source_name] = {
+            "functions": {},
+            "branches": {},
+            "lines": {},
+        }
+
+    for function in source_raw["functions"]:
+        distillFunction(function, sources[source_name]["functions"])
+
+    for line in source_raw["lines"]:
+        distillLine(line, sources[source_name]["lines"], sources[source_name]["branches"])
+
+def distillReport(report_raw):
+    report_json = {
+        "sources": {}
+    }
+
+    for source in report_raw:
+        distillSource(source, report_json["sources"])
+
+    return report_json
+
+def dumpToJson(intermediate, output):
     with open(output, "w") as f:
         json.dump(intermediate, f)
 
@@ -176,7 +236,7 @@ def log(line):
 
 def getGcovFilterOptions(args):
     return {
-        "sources": set([os.path.abspath(s) for s in args.sources]), #Make paths absolute
+        "sources": set([os.path.abspath(s) for s in args.sources]), #Make paths absolute, use set for fast lookups
         "include": args.includepost,
         "exclude": args.excludepost,
     }
@@ -188,9 +248,11 @@ def main(args):
         sys.stderr.write("Minimum gcov version {} required, found {}\n".format(".".join(map(str, MINIMUM_GCOV)), ".".join(map(str, current_gcov_version))))
         exit(1)
 
+    # Get list of gcda files to process
     gcda_files = getGcdaFiles(args.directory, args.gcda_files)
     log("%d .gcda files" % len(gcda_files))
 
+    # If gcda filtering is enabled, filter them out now
     if args.excludepre:
         gcda_files = getFilteredGcdaFiles(gcda_files, args.excludepre)
         log("%d .gcda files after filtering" % len(gcda_files))
@@ -201,20 +263,31 @@ def main(args):
         log("%d .gcda files removed" % len(gcda_files))
         return
 
+    # Fire up one gcov per cpu and start processing gcdas
     gcov_filter_options = getGcovFilterOptions(args)
     intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, gcov_filter_options, args.branchcoverage)
 
+    # Summarize processing results
     gcov_total = sum(GCOVS_TOTAL)
     gcov_skipped = sum(GCOVS_SKIPPED)
     log("%d .gcov files generated by gcov" % gcov_total)
     log("%d .gcov files processed by fastcov (%d skipped)" % (gcov_total - gcov_skipped, gcov_skipped))
 
+    # Distill all the extraneous info gcov gives us down to the core report
+    fastcov_json = distillReport(intermediate_json_files)
+
+    # Dump to desired file format
     if args.lcov:
+        # scanExclusionMarkers(fastcov_json)
         dumpToLcovInfo(args.cdirectory, intermediate_json_files, args.output, args.branchcoverage)
         log("Created lcov info file '%s'" % args.output)
+    elif args.gcov_raw:
+        dumpToJson(intermediate_json_files, args.output)
+        log("Created gcov raw json file '%s'" % args.output)
     else:
-        dumpToGcovJson(intermediate_json_files, args.output)
-        log("Created gcov json file '%s'" % args.output)
+        dumpToJson(fastcov_json, args.output)
+        log("Created fastcov json file '%s'" % args.output)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='A parallel gcov wrapper for fast coverage report generation')
@@ -224,20 +297,22 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--branch-coverage', dest='branchcoverage', action="store_true", help='Include branch counts in the coverage report')
 
     # Filtering Options
-    parser.add_argument('-s', '--source-files', dest='sources',     nargs="+", default=[], help='Filter: Specify exactly which source files should be included in the final report. Paths must be either absolute or relative to current directory.')
-    parser.add_argument('-e', '--exclude',      dest='excludepost', nargs="+", default=[], help='Filter: Exclude source files from final report if they contain one of the provided substrings (i.e. /usr/include test/, etc.)')
-    parser.add_argument('-i', '--include',      dest='includepost', nargs="+", default=[], help='Filter: Only include source files in final report that contain one of the provided substrings (i.e. src/ etc.)')
-    parser.add_argument('-f', '--gcda-files',   dest='gcda_files',  nargs="+", default=[], help='Filter: Specify exactly which gcda files should be processed instead of recursively searching the search directory.')
-    parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", default=[], help='Filter: Exclude gcda files from being processed via simple find matching (not regex)')
+    parser.add_argument('-s', '--source-files', dest='sources',     nargs="+", metavar='', default=[], help='Filter: Specify exactly which source files should be included in the final report. Paths must be either absolute or relative to current directory.')
+    parser.add_argument('-e', '--exclude',      dest='excludepost', nargs="+", metavar='', default=[], help='Filter: Exclude source files from final report if they contain one of the provided substrings (i.e. /usr/include test/, etc.)')
+    parser.add_argument('-i', '--include',      dest='includepost', nargs="+", metavar='', default=[], help='Filter: Only include source files in final report that contain one of the provided substrings (i.e. src/ etc.)')
+    parser.add_argument('-f', '--gcda-files',   dest='gcda_files',  nargs="+", metavar='', default=[], help='Filter: Specify exactly which gcda files should be processed instead of recursively searching the search directory.')
+    parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", metavar='', default=[], help='Filter: Exclude gcda files from being processed via simple find matching (not regex)')
 
     parser.add_argument('-g', '--gcov', dest='gcov', default='gcov', help='Which gcov binary to use')
 
     parser.add_argument('-d', '--search-directory', dest='directory', default=".", help='Base directory to recursively search for gcda files (default: .)')
-    parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default=".", help='Base directory compiler was invoked from (default: .)')
+    parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default=".", help='Base directory compiler was invoked from (default: .) This needs to be set if invoking fastcov from somewhere other than the base compiler directory.')
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: %d).' % multiprocessing.cpu_count())
 
-    parser.add_argument('-o', '--output', dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
-    parser.add_argument('-l', '--lcov', dest='lcov', action="store_true", help='Output in lcov info format instead of gcov json')
+    parser.add_argument('-l', '--lcov',     dest='lcov',     action="store_true", help='Output in lcov info format instead of fastcov json')
+    parser.add_argument('-r', '--gcov-raw', dest='gcov_raw', action="store_true", help='Output in gcov raw json instead of fastcov json')
+    parser.add_argument('-o', '--output',  dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
     parser.add_argument('-q', '--quiet', dest='quiet', action="store_true", help='Suppress output to stdout')
+
     args = parser.parse_args()
     main(args)

@@ -56,12 +56,6 @@ $ fastcov.py --exclude /usr/include test/ ext/ --lcov -o report.info
 
 Check out `fastcov.py --help` for more features and filtering options!
 
-## Legacy fastcov
-
-It is possible to reap most of the benefits of fastcov for GCC version < 9.0.0 and >= 7.1.0. However, there will be a *potential* header file loss of correctness.
-
-`fastcov_legacy.py` can be used with pre GCC-9 down to GCC 7.1.0 but with a few penalties due to gcov limitations. This is because running gcov in parallel generates .gcov header reports in parallel which overwrite each other. This isn't a problem unless your header files have actual logic (i.e. header only library) that you want to measure coverage for. Use the `-F` flag to specify which gcda files should not be run in parallel in order to capture accurate header file data just for those. I don't plan on supporting `fastcov_legacy.py` at all (PRs welcome, though).
-
 ## Benchmarks
 
 Anecdotal testing on my own projects indicate that fastcov is over 100x faster than lcov and over 30x faster than gcovr:
