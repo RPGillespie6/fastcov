@@ -177,7 +177,7 @@ def dumpToLcovInfo(fastcov_json, output):
             f.write("LH:%d\n" % (len(data["lines"]) - line_miss))   #Lines Hit
             f.write("end_of_record\n")
 
-def exclMarkerWorker(fastcov_sources, chunk):
+def exclMarkerWorker(fastcov_sources, chunk, exclude_assert):
     for source in chunk:
         # If there are no covered lines, skip
         if not fastcov_sources[source]["lines"]:
@@ -187,14 +187,17 @@ def exclMarkerWorker(fastcov_sources, chunk):
         end_line = 0
         with open(source) as f:
             for i, line in enumerate(f, 1): #Start enumeration at line 1
-                if not "LCOV_EXCL" in line:
+                if exclude_assert and line.lstrip().startswith("assert"):
+                    if str(i) in fastcov_sources[source]["branches"]:
+                        del fastcov_sources[source]["branches"][str(i)]
+
+                if "LCOV_EXCL" not in line:
                     continue
 
                 if "LCOV_EXCL_LINE" in line:
-                    if str(i) in fastcov_sources[source]["lines"]:
-                        del fastcov_sources[source]["lines"][str(i)]
-                    if str(i) in fastcov_sources[source]["branches"]:
-                        del fastcov_sources[source]["branches"][str(i)]
+                    for key in ["lines", "branches"]:
+                        if str(i) in fastcov_sources[source][key]:
+                            del fastcov_sources[source][key][str(i)]
                 elif "LCOV_EXCL_START" in line:
                     start_line = i
                 elif "LCOV_EXCL_STOP" in line:
@@ -210,13 +213,16 @@ def exclMarkerWorker(fastcov_sources, chunk):
                                 del fastcov_sources[source][key][line_num]
 
                     start_line = end_line = 0
+                elif "LCOV_EXCL_BR_LINE" in line:
+                    if str(i) in fastcov_sources[source]["branches"]:
+                        del fastcov_sources[source]["branches"][str(i)]
 
-def scanExclusionMarkers(fastcov_json, jobs):
+def scanExclusionMarkers(fastcov_json, jobs, exclude_assert):
     chunk_size = max(MINIMUM_CHUNK_SIZE, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     threads = []
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk))
+        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk, exclude_assert))
         threads.append(t)
         t.start()
 
@@ -234,13 +240,23 @@ def distillFunction(function_raw, functions):
     else:
         functions[function_name]["execution_count"] += function_raw["execution_count"]
 
-def distillLine(line_raw, lines, branches):
+def filterExceptionalBranches(branches):
+    if any(branch["throw"] for branch in branches):
+        return []
+    return branches
+
+def distillLine(line_raw, lines, branches, include_exceptional_branches):
     line_number = str(line_raw["line_number"])
     if line_number not in lines:
         lines[line_number] = line_raw["count"]
     else:
         lines[line_number] += line_raw["count"]
 
+    # Filter out exceptional branches by default unless requested otherwise
+    if not include_exceptional_branches:
+        line_raw["branches"] = filterExceptionalBranches(line_raw["branches"])
+
+    # Increment all branch counts
     for i, branch in enumerate(line_raw["branches"]):
         if line_number not in branches:
             branches[line_number] = []
@@ -250,7 +266,7 @@ def distillLine(line_raw, lines, branches):
             branches[line_number] += [0] * (glen - blen)
         branches[line_number][i] += branch["count"]
 
-def distillSource(source_raw, sources):
+def distillSource(source_raw, sources, include_exceptional_branches):
     source_name = source_raw["file_abs"]
     if source_name not in sources:
         sources[source_name] = {
@@ -263,15 +279,15 @@ def distillSource(source_raw, sources):
         distillFunction(function, sources[source_name]["functions"])
 
     for line in source_raw["lines"]:
-        distillLine(line, sources[source_name]["lines"], sources[source_name]["branches"])
+        distillLine(line, sources[source_name]["lines"], sources[source_name]["branches"], include_exceptional_branches)
 
-def distillReport(report_raw):
+def distillReport(report_raw, include_exceptional_branches):
     report_json = {
         "sources": {}
     }
 
     for source in report_raw:
-        distillSource(source, report_json["sources"])
+        distillSource(source, report_json["sources"], include_exceptional_branches)
 
     return report_json
 
@@ -314,7 +330,7 @@ def main(args):
 
     # Fire up one gcov per cpu and start processing gcdas
     gcov_filter_options = getGcovFilterOptions(args)
-    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, gcov_filter_options, args.branchcoverage)
+    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, gcov_filter_options, args.branchcoverage or args.xbranchcoverage)
 
     # Summarize processing results
     gcov_total = sum(GCOVS_TOTAL)
@@ -322,13 +338,15 @@ def main(args):
     log("Processed {} .gcov files ({} total, {} skipped)".format(gcov_total - gcov_skipped, gcov_total, gcov_skipped))
 
     # Distill all the extraneous info gcov gives us down to the core report
-    fastcov_json = distillReport(intermediate_json_files)
+    fastcov_json = distillReport(intermediate_json_files, args.xbranchcoverage)
     log("Aggregated raw gcov JSON into fastcov JSON report")
+
+    # Scan for exclusion markers
+    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_assert)
+    log("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     # Dump to desired file format
     if args.lcov:
-        scanExclusionMarkers(fastcov_json, args.jobs)
-        log("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
         dumpToLcovInfo(fastcov_json, args.output)
         log("Created lcov info file '{}'".format(args.output))
     elif args.gcov_raw:
@@ -344,7 +362,9 @@ if __name__ == '__main__':
     parser.add_argument('-z', '--zerocounters', dest='zerocounters', action="store_true", help='Recursively delete all gcda files')
 
     # Enable Branch Coverage
-    parser.add_argument('-b', '--branch-coverage', dest='branchcoverage', action="store_true", help='Include branch counts in the coverage report')
+    parser.add_argument('-b', '--branch-coverage', dest='branchcoverage', action="store_true", help='Include non-exceptional conditional branch counts in the coverage report.')
+    parser.add_argument('-B', '--exceptional-branch-coverage', dest='xbranchcoverage', action="store_true", help='Include ALL branch counts in the coverage report (including potentially noisy exceptional branches).')
+    parser.add_argument('-A', '--exclude-assert-branches', dest='exclude_assert', action="store_true", help='Exclude assert statements from the branch coverage.')
 
     # Filtering Options
     parser.add_argument('-s', '--source-files', dest='sources',     nargs="+", metavar='', default=[], help='Filter: Specify exactly which source files should be included in the final report. Paths must be either absolute or relative to current directory.')
