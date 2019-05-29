@@ -1,11 +1,11 @@
 # fastcov
 A massively parallel gcov wrapper for generating intermediate coverage formats *fast*
 
-The goal of fastcov is to generate code coverage intermediate formats *as fast as possible* (ideally < 1 second), even for large projects with hundreds of gcda objects. The intermediate formats may then be consumed by a report generator such as lcov's genhtml, or a dedicated front end such as coveralls. fastcov was originally designed to be a drop-in replacement for lcov (application coverage only, not kernel coverage).
+The goal of fastcov is to generate code coverage intermediate formats *as fast as possible*, even for large projects with hundreds of gcda objects. The intermediate formats may then be consumed by a report generator such as lcov's genhtml, or a dedicated front end such as coveralls. fastcov was originally designed to be a drop-in replacement for lcov (application coverage only, not kernel coverage).
 
-Currently the only intermediate formats supported are gcov json format and lcov info format. Adding support for other formats should require just a few lines of python to transform gcov json format to the desired shape.
+Currently the only intermediate formats supported are gcov json format, fastcov json format, and lcov info format. Adding support for other formats should require just a few lines of python to transform gcov json format to the desired shape.
 
-In order to achieve the massive speed gains, a few constraints apply:
+In order to achieve the speed gains, a few constraints apply:
 
 1. GCC version >= 9.0.0
 
@@ -56,6 +56,26 @@ $ fastcov.py --exclude /usr/include test/ ext/ --lcov -o report.info
 
 Check out `fastcov.py --help` for more features and filtering options!
 
+## Installation
+
+A minimum of Python 3.5 is currently required.
+
+Fastcov is a single source python tool. That means you can simply copy `fastcov.py` from this repository and run it directly with no other hassle.
+
+However, fastcov is also available as a Python3 package that can be installed via pip3.
+
+Install newest stable fastcov release from PyPI:
+
+```bash
+$ pip3 install fastcov
+```
+
+Install development version from GitHub:
+
+```bash
+$ pip3 install git+https://github.com/rpgillespie6/fastcov.git
+```
+
 ## Benchmarks
 
 Anecdotal testing on my own projects indicate that fastcov is over 100x faster than lcov and over 30x faster than gcovr:
@@ -67,3 +87,5 @@ Time to process all gcda and parse all gcov:
 - fastcov: ~700ms
 - lcov:    ~90s
 - gcovr:   ~30s
+
+Your mileage may vary depending on the number of cores you have available for fastcov to use!
