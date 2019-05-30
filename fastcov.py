@@ -27,12 +27,11 @@ import threading
 import subprocess
 import multiprocessing
 
-FASTCOV_VERSION = (1,0)
+FASTCOV_VERSION = (1,1)
+MINIMUM_PYTHON  = (3,5)
+MINIMUM_GCOV    = (9,0,0)
 
-MINIMUM_PYTHON = (3,5)
-
-MINIMUM_GCOV = (9,0,0)
-MINIMUM_CHUNK_SIZE = 5
+MINIMUM_CHUNK_SIZE = 5 # Minimum number of files per chunk required to spawn a new thread
 
 # Interesting metrics
 START_TIME = time.time()
@@ -329,10 +328,6 @@ def dumpToJson(intermediate, output):
     with open(output, "w") as f:
         json.dump(intermediate, f)
 
-def log(line):
-    if not args.quiet:
-        print("[{:.3f}s] {}".format(stopwatch(), line))
-
 def getGcovFilterOptions(args):
     return {
         "sources": set([os.path.abspath(s) for s in args.sources]), #Make paths absolute, use set for fast lookups
@@ -367,7 +362,7 @@ def parseArgs():
 
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: %d).' % multiprocessing.cpu_count())
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5). \
-                                                                                                       If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherise fastcov will spawn only 1 thread to process all of them.')
+                                                                                                       If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherwise fastcov will spawn only 1 thread to process all of them.')
 
     parser.add_argument('-l', '--lcov',     dest='lcov',     action="store_true", help='Output in lcov info format instead of fastcov json')
     parser.add_argument('-r', '--gcov-raw', dest='gcov_raw', action="store_true", help='Output in gcov raw json instead of fastcov json')
@@ -444,7 +439,7 @@ def main():
         dumpToJson(fastcov_json, args.output)
         log("Created fastcov json file '{}'".format(args.output))
 
-# Set package version
+# Set package version... it's way down here so that we can call tupleToDotted
 __version__ = tupleToDotted(FASTCOV_VERSION)
 
 if __name__ == '__main__':
