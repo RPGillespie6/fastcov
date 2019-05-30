@@ -11,7 +11,7 @@ In order to achieve the speed gains, a few constraints apply:
 
 These versions of GCOV have support for JSON intermediate format as well as streaming report data straight to stdout. This second feature (the ability for gcov to stream report data to stdout) is critical - without it, fastcov cannot run multiple instances of gcov in parallel without loss of correctness.
 
-Since GCC 9 has not officially released, the current easiest way (in my opinion) to try out fastcov is to use the fastcov docker image, which has the latest versions of the GCC 9 compilers, Python3, and CMake inside:
+If your linux distribution doesn't ship with GCC 9, the current easiest way (in my opinion) to try out fastcov is to use the fastcov docker image, which has a GCC 9 compiler, Python3, and CMake inside:
 
 ```bash
 docker pull rpgillespie6/fastcov:latest
