@@ -60,7 +60,7 @@ def stopwatch():
 
 def parseVersionFromLine(version_str):
     """Given a string containing a dotted integer version, parse out integers and return as tuple"""
-    version = re.search(r'(\d+\.\d+\.\d+)[^\.]', version_str)
+    version = re.search(r'(\d+\.\d+\.\d+)', version_str)
 
     if not version:
         return (0,0,0)
