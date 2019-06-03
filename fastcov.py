@@ -31,8 +31,6 @@ FASTCOV_VERSION = (1,1)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
-MINIMUM_CHUNK_SIZE = 5 # Minimum number of files per chunk required to spawn a new thread
-
 # Interesting metrics
 START_TIME = time.time()
 GCOVS_TOTAL = []
@@ -105,8 +103,8 @@ def gcovWorker(cwd, gcov, files, chunk, gcov_filter_options, branch_coverage):
         GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
     p.wait()
 
-def processGcdas(cwd, gcov, jobs, gcda_files, gcov_filter_options, branch_coverage):
-    chunk_size = max(MINIMUM_CHUNK_SIZE, int(len(gcda_files) / jobs) + 1)
+def processGcdas(cwd, gcov, jobs, gcda_files, gcov_filter_options, branch_coverage, min_chunk_size):
+    chunk_size = max(min_chunk_size, int(len(gcda_files) / jobs) + 1)
 
     threads = []
     intermediate_json_files = []
@@ -115,7 +113,7 @@ def processGcdas(cwd, gcov, jobs, gcda_files, gcov_filter_options, branch_covera
         threads.append(t)
         t.start()
 
-    log("Spawned %d gcov threads, each processing at most %d gcda files" % (len(threads), chunk_size))
+    log("Spawned {} gcov threads, each processing at most {} gcda files".format(len(threads), chunk_size))
     for t in threads:
         t.join()
 
@@ -157,33 +155,33 @@ def dumpBranchCoverageToLcovInfo(f, branches):
     for line_num, branch_counts in branches.items():
         for i, count in enumerate(branch_counts):
             #Branch (<line number>, <block number>, <branch number>, <taken>)
-            f.write("BRDA:%s,%d,%d,%d\n" % (line_num, int(i/2), i, count))
+            f.write("BRDA:{},{},{},{}\n".format(line_num, int(i/2), i, count))
             branch_miss += int(count == 0)
-    f.write("BRF:%d\n" % len(branches))                 #Branches Found
-    f.write("BRH:%d\n" % (len(branches) - branch_miss)) #Branches Hit
+    f.write("BRF:{}\n".format(len(branches)))                 #Branches Found
+    f.write("BRH:{}\n".format((len(branches) - branch_miss))) #Branches Hit
 
 def dumpToLcovInfo(fastcov_json, output):
     with open(output, "w") as f:
         for sf, data in fastcov_json["sources"].items():
-            f.write("SF:%s\n" % sf) #Source File
+            f.write("SF:{}\n".format(sf)) #Source File
 
             fn_miss = 0
             for function, fdata in data["functions"].items():
-                f.write("FN:%d,%s\n" % (fdata["start_line"], function))          #Function Start Line
-                f.write("FNDA:%d,%s\n" % (fdata["execution_count"], function))   #Function Hits
+                f.write("FN:{},{}\n".format(fdata["start_line"], function))          #Function Start Line
+                f.write("FNDA:{},{}\n".format(fdata["execution_count"], function))   #Function Hits
                 fn_miss += int(fdata["execution_count"] == 0)
-            f.write("FNF:%d\n" % len(data["functions"]))                #Functions Found
-            f.write("FNH:%d\n" % (len(data["functions"]) - fn_miss))    #Functions Hit
+            f.write("FNF:{}\n".format(len(data["functions"])))               #Functions Found
+            f.write("FNH:{}\n".format((len(data["functions"]) - fn_miss)))   #Functions Hit
 
             if data["branches"]:
                 dumpBranchCoverageToLcovInfo(f, data["branches"])
 
             line_miss = 0
             for line_num, count in data["lines"].items():
-                f.write("DA:%s,%d\n" % (line_num, count)) #Line
+                f.write("DA:{},{}\n".format(line_num, count)) #Line
                 line_miss += int(count == 0)
-            f.write("LF:%d\n" % len(data["lines"]))                 #Lines Found
-            f.write("LH:%d\n" % (len(data["lines"]) - line_miss))   #Lines Hit
+            f.write("LF:{}\n".format(len(data["lines"])))                 #Lines Found
+            f.write("LH:{}\n".format((len(data["lines"]) - line_miss)))   #Lines Hit
             f.write("end_of_record\n")
 
 def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw):
@@ -227,8 +225,8 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw):
                     if str(i) in fastcov_sources[source]["branches"]:
                         del fastcov_sources[source]["branches"][str(i)]
 
-def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw):
-    chunk_size = max(MINIMUM_CHUNK_SIZE, int(len(fastcov_json["sources"]) / jobs) + 1)
+def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, min_chunk_size):
+    chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     threads = []
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
@@ -236,7 +234,7 @@ def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw):
         threads.append(t)
         t.start()
 
-    log("Spawned %d threads each scanning at most %d source files" % (len(threads), chunk_size))
+    log("Spawned {} threads each scanning at most {} source files".format(len(threads), chunk_size))
     for t in threads:
         t.join()
 
@@ -360,7 +358,7 @@ def parseArgs():
     parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default=".", help='Base directory compiler was invoked from (default: .) \
                                                                                             This needs to be set if invoking fastcov from somewhere other than the base compiler directory.')
 
-    parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: %d).' % multiprocessing.cpu_count())
+    parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: {}).'.format(multiprocessing.cpu_count()))
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5). \
                                                                                                        If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherwise fastcov will spawn only 1 thread to process all of them.')
 
@@ -413,7 +411,7 @@ def main():
 
     # Fire up one gcov per cpu and start processing gcdas
     gcov_filter_options = getGcovFilterOptions(args)
-    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, gcov_filter_options, args.branchcoverage or args.xbranchcoverage)
+    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, gcda_files, gcov_filter_options, args.branchcoverage or args.xbranchcoverage, args.minimum_chunk)
 
     # Summarize processing results
     gcov_total = sum(GCOVS_TOTAL)
@@ -425,7 +423,7 @@ def main():
     log("Aggregated raw gcov JSON into fastcov JSON report")
 
     # Scan for exclusion markers
-    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw)
+    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.minimum_chunk)
     log("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     # Dump to desired file format
