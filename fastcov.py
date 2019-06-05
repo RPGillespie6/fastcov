@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
     Author: Bryan Gillespie
 
@@ -19,7 +19,6 @@
 import re
 import os
 import sys
-import glob
 import json
 import time
 import argparse
@@ -28,10 +27,40 @@ import subprocess
 import multiprocessing
 
 FASTCOV_VERSION = (1,1)
-MINIMUM_PYTHON  = (3,5)
-MINIMUM_GCOV    = (9,0,0)
+MINIMUM_GCOV = (9,0,0)
 
 MINIMUM_CHUNK_SIZE = 5 # Minimum number of files per chunk required to spawn a new thread
+
+# Back support for python2
+if sys.version_info[0:2] < (3,5):
+    import fnmatch
+    def glob(pathname, recursive=False):
+        """Basic recursive glob for python2"""
+        files = []
+        topdir = pathname.split('*')[0] or './'
+
+        # remove the directory separator when it follows a ** pattern. fnmatch
+        # replaces '*' with a '.*' regex, so multiple '*'s are redunant, but
+        # dangerous when preceding a directory separator, because that will be
+        # non-optional. eg: "**/*.xyz" will match "a/b.xyz", but NOT
+        # "a.xyz". this modification emulates the python 3.5+ recursive glob
+        # behavior (which is the bash behavior).
+        pathname = pathname.replace("**/*", "*")
+
+        if recursive:
+            # python2 version of recursive glob
+            def pattern_match(file_list, dirname, fnames):
+                filtered = fnmatch.filter([os.path.join(dirname, fname) for fname in fnames], pathname)
+                file_list += list(filter(os.path.isfile, filtered))
+            os.path.walk(topdir, pattern_match, files)
+
+        else:
+            # non-recursive, list top directory only
+            files += list(fnmatch.filter(os.listdir(topdir), pathname))
+
+        return files
+else:
+    from glob import glob
 
 # Interesting metrics
 START_TIME = time.time()
@@ -87,23 +116,36 @@ def getFilteredGcdaFiles(gcda_files, exclude):
 
 def getGcdaFiles(cwd, gcda_files):
     if not gcda_files:
-        gcda_files = glob.glob(os.path.join(os.path.abspath(cwd), "**/*.gcda"), recursive=True)
+        gcda_files = glob(os.path.join(os.path.abspath(cwd), "**/*.gcda"), recursive=True)
     return gcda_files
+
+class DevNull():
+    """devnull io wrapper"""
+    def __enter__(self):
+        self._devnull = os.open(os.devnull, os.O_RDWR)
+    def __exit__(self, *args):
+        os.close(self._devnull)
 
 def gcovWorker(cwd, gcov, files, chunk, gcov_filter_options, branch_coverage):
     gcov_args = "-it"
     if branch_coverage:
         gcov_args += "b"
 
-    p = subprocess.Popen([gcov, gcov_args] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    for line in iter(p.stdout.readline, b''):
-        intermediate_json = json.loads(line.decode(sys.stdout.encoding))
-        intermediate_json_files = processGcovs(cwd, intermediate_json["files"], gcov_filter_options)
-        for f in intermediate_json_files:
-            files.append(f) #thread safe, there might be a better way to do this though
-        GCOVS_TOTAL.append(len(intermediate_json["files"]))
-        GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
-    p.wait()
+    with DevNull() as devnull:
+        p = subprocess.Popen(
+            [gcov, gcov_args] + chunk,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=devnull,
+        )
+        for line in iter(p.stdout.readline, b''):
+            intermediate_json = json.loads(line.decode(sys.stdout.encoding))
+            intermediate_json_files = processGcovs(cwd, intermediate_json["files"], gcov_filter_options)
+            for f in intermediate_json_files:
+                files.append(f) #thread safe, there might be a better way to do this though
+            GCOVS_TOTAL.append(len(intermediate_json["files"]))
+            GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
+        p.wait()
 
 def processGcdas(cwd, gcov, jobs, gcda_files, gcov_filter_options, branch_coverage):
     chunk_size = max(MINIMUM_CHUNK_SIZE, int(len(gcda_files) / jobs) + 1)
@@ -384,11 +426,6 @@ def parseArgs():
 
 def main():
     args = parseArgs()
-
-    # Need at least python 3.5 because of use of recursive glob
-    if sys.version_info[0:2] < MINIMUM_PYTHON:
-        sys.stderr.write("Minimum python version {} required, found {}\n".format(tupleToDotted(MINIMUM_PYTHON), tupleToDotted(sys.version_info[0:2])))
-        exit(1)
 
     # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
     current_gcov_version = getGcovVersion(args.gcov)
