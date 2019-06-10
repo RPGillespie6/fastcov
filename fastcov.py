@@ -184,7 +184,7 @@ def dumpToLcovInfo(fastcov_json, output):
             f.write("LH:{}\n".format((len(data["lines"]) - line_miss)))   #Lines Hit
             f.write("end_of_record\n")
 
-def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw):
+def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branches_sw):
     for source in chunk:
         # If there are no covered lines, skip
         if not fastcov_sources[source]["lines"]:
@@ -194,9 +194,11 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw):
         end_line = 0
         with open(source) as f:
             for i, line in enumerate(f, 1): #Start enumeration at line 1
-                # Exclude branches starting with...
-                for e in exclude_branches_sw:
-                    if line.lstrip().startswith(e) and str(i) in fastcov_sources[source]["branches"]:
+                if str(i) in fastcov_sources[source]["branches"]:
+                    if all(not line.lstrip().startswith(e) for e in include_branches_sw): # Include branches starting with...
+                        del fastcov_sources[source]["branches"][str(i)]
+
+                    if any(line.lstrip().startswith(e) for e in exclude_branches_sw): # Exclude branches starting with...
                         del fastcov_sources[source]["branches"][str(i)]
 
                 if "LCOV_EXCL" not in line:
@@ -225,12 +227,12 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw):
                     if str(i) in fastcov_sources[source]["branches"]:
                         del fastcov_sources[source]["branches"][str(i)]
 
-def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, min_chunk_size):
+def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     threads = []
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk, exclude_branches_sw))
+        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw))
         threads.append(t)
         t.start()
 
@@ -344,6 +346,7 @@ def parseArgs():
     parser.add_argument('-b', '--branch-coverage', dest='branchcoverage', action="store_true", help='Include only the most useful branches in the coverage report.')
     parser.add_argument('-B', '--exceptional-branch-coverage', dest='xbranchcoverage', action="store_true", help='Include ALL branches in the coverage report (including potentially noisy exceptional branches).')
     parser.add_argument('-A', '--exclude-br-lines-starting-with', dest='exclude_branches_sw', nargs="+", metavar='', default=[], help='Exclude branches from lines starting with one of the provided strings (i.e. assert, return, etc.)')
+    parser.add_argument('-a', '--include-br-lines-starting-with', dest='include_branches_sw', nargs="+", metavar='', default=[], help='Include only branches from lines starting with one of the provided strings (i.e. if, else, while, etc.)')
 
     # Filtering Options
     parser.add_argument('-s', '--source-files', dest='sources',     nargs="+", metavar='', default=[], help='Filter: Specify exactly which source files should be included in the final report. Paths must be either absolute or relative to current directory.')
@@ -423,7 +426,7 @@ def main():
     log("Aggregated raw gcov JSON into fastcov JSON report")
 
     # Scan for exclusion markers
-    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.minimum_chunk)
+    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk)
     log("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     # Dump to desired file format
