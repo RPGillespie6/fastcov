@@ -27,7 +27,7 @@ import threading
 import subprocess
 import multiprocessing
 
-FASTCOV_VERSION = (1,1)
+FASTCOV_VERSION = (1,2)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
@@ -184,7 +184,21 @@ def dumpToLcovInfo(fastcov_json, output):
             f.write("LH:{}\n".format((len(data["lines"]) - line_miss)))   #Lines Hit
             f.write("end_of_record\n")
 
-def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branches_sw):
+def getSourceLines(source, fallback_encodings=[]):
+    """Return a list of lines from the provided source, trying to decode with fallback encodings if the default fails"""
+    default_encoding = sys.getdefaultencoding()
+    for encoding in [default_encoding] + fallback_encodings:
+        try:
+            with open(source, encoding=encoding) as f:
+                return f.readlines()
+        except UnicodeDecodeError:
+            pass
+
+    log("Warning: could not decode '{}' with {} or fallback encodings ({}); ignoring errors".format(source, default_encoding, ",".join(fallback_encodings)))
+    with open(source, errors="ignore") as f:
+        return f.readlines()
+
+def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings):
     for source in chunk:
         # If there are no covered lines, skip
         if not fastcov_sources[source]["lines"]:
@@ -192,47 +206,46 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
 
         start_line = 0
         end_line = 0
-        with open(source) as f:
-            for i, line in enumerate(f, 1): #Start enumeration at line 1
-                if str(i) in fastcov_sources[source]["branches"]:
-                    if include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw): # Include branches starting with...
-                        del fastcov_sources[source]["branches"][str(i)]
+        for i, line in enumerate(getSourceLines(source, fallback_encodings), 1): #Start enumeration at line 1
+            if str(i) in fastcov_sources[source]["branches"]:
+                if include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw): # Include branches starting with...
+                    del fastcov_sources[source]["branches"][str(i)]
 
-                    if exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw): # Exclude branches starting with...
-                        del fastcov_sources[source]["branches"][str(i)]
+                if exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw): # Exclude branches starting with...
+                    del fastcov_sources[source]["branches"][str(i)]
 
-                if "LCOV_EXCL" not in line:
+            if "LCOV_EXCL" not in line:
+                continue
+
+            if "LCOV_EXCL_LINE" in line:
+                for key in ["lines", "branches"]:
+                    if str(i) in fastcov_sources[source][key]:
+                        del fastcov_sources[source][key][str(i)]
+            elif "LCOV_EXCL_START" in line:
+                start_line = i
+            elif "LCOV_EXCL_STOP" in line:
+                end_line = i
+
+                if not start_line:
+                    end_line = 0
                     continue
 
-                if "LCOV_EXCL_LINE" in line:
-                    for key in ["lines", "branches"]:
-                        if str(i) in fastcov_sources[source][key]:
-                            del fastcov_sources[source][key][str(i)]
-                elif "LCOV_EXCL_START" in line:
-                    start_line = i
-                elif "LCOV_EXCL_STOP" in line:
-                    end_line = i
+                for key in ["lines", "branches"]:
+                    for line_num in list(fastcov_sources[source][key].keys()):
+                        if int(line_num) <= end_line and int(line_num) >= start_line:
+                            del fastcov_sources[source][key][line_num]
 
-                    if not start_line:
-                        end_line = 0
-                        continue
+                start_line = end_line = 0
+            elif "LCOV_EXCL_BR_LINE" in line:
+                if str(i) in fastcov_sources[source]["branches"]:
+                    del fastcov_sources[source]["branches"][str(i)]
 
-                    for key in ["lines", "branches"]:
-                        for line_num in list(fastcov_sources[source][key].keys()):
-                            if int(line_num) <= end_line and int(line_num) >= start_line:
-                                del fastcov_sources[source][key][line_num]
-
-                    start_line = end_line = 0
-                elif "LCOV_EXCL_BR_LINE" in line:
-                    if str(i) in fastcov_sources[source]["branches"]:
-                        del fastcov_sources[source]["branches"][str(i)]
-
-def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size):
+def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     threads = []
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw))
+        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, fallback_encodings))
         threads.append(t)
         t.start()
 
@@ -365,6 +378,8 @@ def parseArgs():
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5). \
                                                                                                        If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherwise fastcov will spawn only 1 thread to process all of them.')
 
+    parser.add_argument('-F', '--fallback-encodings', dest='fallback_encodings', nargs="+", metavar='', default=[], help='List of encodings to try if opening a source file with the default fails (i.e. latin1, etc.). This option is not usually needed.')
+
     parser.add_argument('-l', '--lcov',     dest='lcov',     action="store_true", help='Output in lcov info format instead of fastcov json')
     parser.add_argument('-r', '--gcov-raw', dest='gcov_raw', action="store_true", help='Output in gcov raw json instead of fastcov json')
     parser.add_argument('-o', '--output',  dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
@@ -426,7 +441,7 @@ def main():
     log("Aggregated raw gcov JSON into fastcov JSON report")
 
     # Scan for exclusion markers
-    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk)
+    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
     log("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     # Dump to desired file format
