@@ -151,14 +151,19 @@ def processGcovs(cwd, gcov_files, gcov_filter_options):
     return files
 
 def dumpBranchCoverageToLcovInfo(f, branches):
-    branch_miss  = 0
+    branch_miss = 0
+    branch_found = 0
+    brda = []
     for line_num, branch_counts in branches.items():
         for i, count in enumerate(branch_counts):
-            #Branch (<line number>, <block number>, <branch number>, <taken>)
-            f.write("BRDA:{},{},{},{}\n".format(line_num, int(i/2), i, count))
+            # Branch (<line number>, <block number>, <branch number>, <taken>)
+            brda.append((int(line_num), int(i/2), i, count))  # XXX: just use int for line_num throughout
             branch_miss += int(count == 0)
-    f.write("BRF:{}\n".format(len(branches)))                 #Branches Found
-    f.write("BRH:{}\n".format((len(branches) - branch_miss))) #Branches Hit
+            branch_found += 1
+    for v in sorted(brda):
+        f.write("BRDA:{},{},{},{}\n".format(*v))
+    f.write("BRF:{}\n".format(branch_found))                # Branches Found
+    f.write("BRH:{}\n".format(branch_found - branch_miss))  # Branches Hit
 
 def dumpToLcovInfo(fastcov_json, output):
     with open(output, "w") as f:
@@ -166,10 +171,17 @@ def dumpToLcovInfo(fastcov_json, output):
             f.write("SF:{}\n".format(sf)) #Source File
 
             fn_miss = 0
+            fn = []
+            fnda = []
             for function, fdata in data["functions"].items():
-                f.write("FN:{},{}\n".format(fdata["start_line"], function))          #Function Start Line
-                f.write("FNDA:{},{}\n".format(fdata["execution_count"], function))   #Function Hits
+                fn.append((fdata["start_line"], function))  # Function Start Line
+                fnda.append((fdata["execution_count"], function))  # Function Hits
                 fn_miss += int(fdata["execution_count"] == 0)
+            # NOTE: lcov sorts FN, but not FNDA.
+            for v in sorted(fn):
+                f.write("FN:{},{}\n".format(*v))
+            for v in sorted(fnda):
+                f.write("FNDA:{},{}\n".format(*v))
             f.write("FNF:{}\n".format(len(data["functions"])))               #Functions Found
             f.write("FNH:{}\n".format((len(data["functions"]) - fn_miss)))   #Functions Hit
 
@@ -177,9 +189,15 @@ def dumpToLcovInfo(fastcov_json, output):
                 dumpBranchCoverageToLcovInfo(f, data["branches"])
 
             line_miss = 0
+            da = []
             for line_num, count in data["lines"].items():
-                f.write("DA:{},{}\n".format(line_num, count)) #Line
+                # NOTE: lcov turns this into ints, fastcov keeps floats here
+                # (e.g. "DA:119,525694020.0" - for large numbers in header
+                # files?!)
+                da.append((int(line_num), count))
                 line_miss += int(count == 0)
+            for v in sorted(da):
+                f.write("DA:{},{}\n".format(*v))  # Line
             f.write("LF:{}\n".format(len(data["lines"])))                 #Lines Found
             f.write("LH:{}\n".format((len(data["lines"]) - line_miss)))   #Lines Hit
             f.write("end_of_record\n")
