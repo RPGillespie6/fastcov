@@ -194,7 +194,7 @@ def dumpToLcovInfo(fastcov_json, output):
                 # NOTE: lcov turns this into ints, fastcov keeps floats here
                 # (e.g. "DA:119,525694020.0" - for large numbers in header
                 # files?!)
-                da.append((int(line_num), count))
+                da.append((int(line_num), int(count)))  # XXX: lnum: int for sorting, should be used throughout.
                 line_miss += int(count == 0)
             for v in sorted(da):
                 f.write("DA:{},{}\n".format(*v))  # Line
