@@ -273,13 +273,14 @@ def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branch
 
 def distillFunction(function_raw, functions):
     function_name = function_raw["name"]
+    execution_count = int(function_raw["execution_count"])
     if function_name not in functions:
         functions[function_name] = {
             "start_line": function_raw["start_line"],
-            "execution_count": function_raw["execution_count"]
+            "execution_count": execution_count,
         }
     else:
-        functions[function_name]["execution_count"] += function_raw["execution_count"]
+        functions[function_name]["execution_count"] += execution_count
 
 def emptyBranchSet(branch1, branch2):
     return (branch1["count"] == 0 and branch2["count"] == 0)
