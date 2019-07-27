@@ -167,7 +167,9 @@ def dumpBranchCoverageToLcovInfo(f, branches):
 
 def dumpToLcovInfo(fastcov_json, output):
     with open(output, "w") as f:
-        for sf, data in fastcov_json["sources"].items():
+        sources = fastcov_json["sources"]
+        for sf in sorted(sources.keys()):
+            data = sources[sf]
             f.write("SF:{}\n".format(sf)) #Source File
 
             fn_miss = 0
