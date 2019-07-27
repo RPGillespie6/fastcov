@@ -157,7 +157,7 @@ def dumpBranchCoverageToLcovInfo(f, branches):
     for line_num, branch_counts in branches.items():
         for i, count in enumerate(branch_counts):
             # Branch (<line number>, <block number>, <branch number>, <taken>)
-            brda.append((int(line_num), int(i/2), i, count))  # XXX: just use int for line_num throughout
+            brda.append((int(line_num), int(i/2), i, int(count)))  # XXX: just use int for line_num/count throughout
             branch_miss += int(count == 0)
             branch_found += 1
     for v in sorted(brda):
