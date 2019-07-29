@@ -1,0 +1,21 @@
+# Disable sudo to speed up the build
+sudo: false
+
+language: minimal
+
+branches:
+  only:
+    - master
+
+services:
+  - docker
+
+before_install:
+#  - docker pull rpgillespie6/fastcov
+  - docker build -t fastcov .
+
+script:
+  - docker run -v "$TRAVIS_BUILD_DIR":/mnt/workspace -w /mnt/workspace fastcov bash -c "cd ./test && ./run_tests.sh"
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash) -X gcov -X coveragepy -s $TRAVIS_BUILD_DIR # Upload coverage to codecov

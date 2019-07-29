@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.com/RPGillespie6/fastcov.svg?branch=master)](https://travis-ci.com/RPGillespie6/fastcov)
+[![Code Coverage](https://img.shields.io/codecov/c/github/rpgillespie6/fastcov.svg)](https://codecov.io/gh/RPGillespie6/fastcov)
+
 # fastcov
 A massively parallel gcov wrapper for generating intermediate coverage formats *fast*
 
