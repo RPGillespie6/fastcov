@@ -207,20 +207,20 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
         start_line = 0
         end_line = 0
         for i, line in enumerate(getSourceLines(source, fallback_encodings), 1): #Start enumeration at line 1
-            if str(i) in fastcov_sources[source]["branches"]:
+            if i in fastcov_sources[source]["branches"]:
                 if include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw): # Include branches starting with...
-                    del fastcov_sources[source]["branches"][str(i)]
+                    del fastcov_sources[source]["branches"][i]
 
                 if exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw): # Exclude branches starting with...
-                    del fastcov_sources[source]["branches"][str(i)]
+                    del fastcov_sources[source]["branches"][i]
 
             if "LCOV_EXCL" not in line:
                 continue
 
             if "LCOV_EXCL_LINE" in line:
                 for key in ["lines", "branches"]:
-                    if str(i) in fastcov_sources[source][key]:
-                        del fastcov_sources[source][key][str(i)]
+                    if i in fastcov_sources[source][key]:
+                        del fastcov_sources[source][key][i]
             elif "LCOV_EXCL_START" in line:
                 start_line = i
             elif "LCOV_EXCL_STOP" in line:
@@ -237,8 +237,8 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
 
                 start_line = end_line = 0
             elif "LCOV_EXCL_BR_LINE" in line:
-                if str(i) in fastcov_sources[source]["branches"]:
-                    del fastcov_sources[source]["branches"][str(i)]
+                if i in fastcov_sources[source]["branches"]:
+                    del fastcov_sources[source]["branches"][i]
 
 def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
@@ -254,14 +254,16 @@ def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branch
         t.join()
 
 def distillFunction(function_raw, functions):
-    function_name = function_raw["name"]
+    function_name   = function_raw["name"]
+    start_line      = int(function_raw["start_line"])
+    execution_count = int(function_raw["execution_count"])
     if function_name not in functions:
         functions[function_name] = {
-            "start_line": function_raw["start_line"],
-            "execution_count": function_raw["execution_count"]
+            "start_line": start_line,
+            "execution_count": execution_count
         }
     else:
-        functions[function_name]["execution_count"] += function_raw["execution_count"]
+        functions[function_name]["execution_count"] += execution_count
 
 def emptyBranchSet(branch1, branch2):
     return (branch1["count"] == 0 and branch2["count"] == 0)
@@ -292,11 +294,12 @@ def filterExceptionalBranches(branches):
     return filtered_branches
 
 def distillLine(line_raw, lines, branches, include_exceptional_branches):
-    line_number = str(line_raw["line_number"])
+    line_number = int(line_raw["line_number"])
+    count       = int(line_raw["count"])
     if line_number not in lines:
-        lines[line_number] = line_raw["count"]
+        lines[line_number] = count
     else:
-        lines[line_number] += line_raw["count"]
+        lines[line_number] += count
 
     # Filter out exceptional branches by default unless requested otherwise
     if not include_exceptional_branches:
@@ -310,7 +313,7 @@ def distillLine(line_raw, lines, branches, include_exceptional_branches):
         glen = len(line_raw["branches"])
         if blen < glen:
             branches[line_number] += [0] * (glen - blen)
-        branches[line_number][i] += branch["count"]
+        branches[line_number][i] += int(branch["count"])
 
 def distillSource(source_raw, sources, include_exceptional_branches):
     source_name = source_raw["file_abs"]
