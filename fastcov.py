@@ -170,6 +170,8 @@ def dumpToLcovInfo(fastcov_json, output):
         sources = fastcov_json["sources"]
         for sf in sorted(sources.keys()):
             data = sources[sf]
+            # NOTE: TN stands for "Test Name" and appears to be unimplemented, but lcov includes it, so we do too...
+            f.write("TN:\n")
             f.write("SF:{}\n".format(sf)) #Source File
 
             fn_miss = 0
