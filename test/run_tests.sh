@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Print every line
 set -x
 
@@ -5,9 +7,9 @@ set -x
 set -e
 
 # Run all unit tests
-cd unittest
-pytest --cov=fastcov --cov-report xml:coverage.xml
+cd unit
+./run_all.sh
 
 # Run all functional Tests
-cd ../functionaltest
-pytest --cov=fastcov --cov-report xml:coverage.xml
+cd ../functional
+./run_all.sh
