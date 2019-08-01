@@ -11,11 +11,11 @@ services:
   - docker
 
 before_install:
-#  - docker pull rpgillespie6/fastcov
-  - docker build -t fastcov .
+  # - docker build -t fastcov .
+  - docker pull rpgillespie6/fastcov # This image shouldn't change much, so it's more efficient to pull a cached copy
 
 script:
-  - docker run -v "$TRAVIS_BUILD_DIR":/mnt/workspace -w /mnt/workspace fastcov bash -c "cd ./test && ./run_tests.sh"
+  - docker run -v "$TRAVIS_BUILD_DIR":/mnt/workspace -w /mnt/workspace rpgillespie6/fastcov bash -c "cd ./test && ./run_tests.sh"
 
 after_success:
   - bash <(curl -s https://codecov.io/bash) -X gcov -X coveragepy -s $TRAVIS_BUILD_DIR # Upload coverage to codecov
