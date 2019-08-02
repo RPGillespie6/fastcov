@@ -422,19 +422,26 @@ def parseArgs():
 
     return args
 
+def checkPythonVersion(version):
+    """Exit if the provided python version is less than the supported version"""
+    if version < MINIMUM_PYTHON:
+        sys.stderr.write("Minimum python version {} required, found {}\n".format(tupleToDotted(MINIMUM_PYTHON), tupleToDotted(version)))
+        sys.exit(1)
+
+def checkGcovVersion(version):
+    """Exit if the provided gcov version is less than the supported version"""
+    if version < MINIMUM_GCOV:
+        sys.stderr.write("Minimum gcov version {} required, found {}\n".format(tupleToDotted(MINIMUM_GCOV), tupleToDotted(version)))
+        sys.exit(2)
+
 def main():
     args = parseArgs()
 
     # Need at least python 3.5 because of use of recursive glob
-    if sys.version_info[0:2] < MINIMUM_PYTHON:
-        sys.stderr.write("Minimum python version {} required, found {}\n".format(tupleToDotted(MINIMUM_PYTHON), tupleToDotted(sys.version_info[0:2])))
-        exit(1)
+    checkPythonVersion(sys.version_info[0:2])
 
     # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
-    current_gcov_version = getGcovVersion(args.gcov)
-    if current_gcov_version < MINIMUM_GCOV:
-        sys.stderr.write("Minimum gcov version {} required, found {}\n".format(tupleToDotted(MINIMUM_GCOV), tupleToDotted(current_gcov_version)))
-        exit(1)
+    checkGcovVersion(getGcovVersion(args.gcov))
 
     # Get list of gcda files to process
     gcda_files = getGcdaFiles(args.directory, args.gcda_files)
