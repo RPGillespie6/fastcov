@@ -18,8 +18,8 @@ mkdir build && cd build
 cmake .. -G Ninja
 ninja
 
-# Run tests
-ctest
+# Run ctest_1
+ctest -R ctest_1
 
 # Erase coverage
 coverage erase
@@ -54,6 +54,17 @@ if coverage run --append ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh 
     echo "Expected gcov version check to fail"
     exit 1
 fi
+
+# Run ctest_2
+ctest -R ctest_2
+
+# Test 8 (lcov info - with non-utf8 encoding and fallback)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --fallback-encodings latin1 --lcov -o test8.actual.info
+cmp test8.actual.info ${TEST_DIR}/expected_results/latin1_test.expected.info
+
+# Test 9 (lcov info - with non-utf8 encoding and no fallback)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --lcov -o test9.actual.info
+cmp test9.actual.info ${TEST_DIR}/expected_results/latin1_test.expected.info
 
 # Write out coverage as xml
 coverage xml -o coverage.xml

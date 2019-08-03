@@ -251,7 +251,7 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
 
                 for key in ["lines", "branches"]:
                     for line_num in list(fastcov_sources[source][key].keys()):
-                        if int(line_num) <= end_line and int(line_num) >= start_line:
+                        if start_line <= line_num <= end_line:
                             del fastcov_sources[source][key][line_num]
 
                 start_line = end_line = 0
