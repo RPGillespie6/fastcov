@@ -32,12 +32,24 @@ cmp test1.actual.info ${TEST_DIR}/expected_results/test1.expected.info
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --lcov -o test2.actual.info
 cmp test2.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 
-# Test 3 (zerocounters)
+# Test 3 (basic lcov info - with branches; equivalent --include)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --include src/ --lcov -o test3.actual.info
+cmp test3.actual.info ${TEST_DIR}/expected_results/test2.expected.info
+
+# Test 4 (basic lcov info - with branches; equivalent --exclude-gcda)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude-gcda test1.cpp.gcda --lcov -o test4.actual.info
+cmp test4.actual.info ${TEST_DIR}/expected_results/test2.expected.info
+
+# Test 5 (basic lcov info - with branches; equivalent --source-files)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files ../src/source1.cpp ../src/source2.cpp --lcov -o test5.actual.info
+cmp test5.actual.info ${TEST_DIR}/expected_results/test2.expected.info
+
+# Test 6 (zerocounters)
 test `find . -name *.gcda | wc -l` -ne 0
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters
 test `find . -name *.gcda | wc -l` -eq 0
 
-# Test 4 (gcov version fail)
+# Test 7 (gcov version fail)
 if coverage run --append ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh ; then
     echo "Expected gcov version check to fail"
     exit 1
