@@ -28,12 +28,16 @@ coverage erase
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ --lcov -o test1.actual.info
 cmp test1.actual.info ${TEST_DIR}/expected_results/test1.expected.info
 
-# Test 2 (zerocounters)
+# Test 2 (basic lcov info - with branches)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --lcov -o test2.actual.info
+cmp test2.actual.info ${TEST_DIR}/expected_results/test2.expected.info
+
+# Test 3 (zerocounters)
 test `find . -name *.gcda | wc -l` -ne 0
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters
 test `find . -name *.gcda | wc -l` -eq 0
 
-# Test 3 (gcov version fail)
+# Test 4 (gcov version fail)
 if coverage run --append ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh ; then
     echo "Expected gcov version check to fail"
     exit 1
