@@ -32,7 +32,7 @@ MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
 # Interesting metrics
-START_TIME = time.time()
+START_TIME = time.monotonic()
 GCOVS_TOTAL = []
 GCOVS_SKIPPED = []
 
@@ -51,7 +51,7 @@ def chunks(l, n):
 def stopwatch():
     """Return number of seconds since last time this was called"""
     global START_TIME
-    end_time   = time.time()
+    end_time   = time.monotonic()
     delta      = end_time - START_TIME
     START_TIME = end_time
     return delta
