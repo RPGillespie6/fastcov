@@ -219,10 +219,6 @@ def getSourceLines(source, fallback_encodings=[]):
 
 def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings):
     for source in chunk:
-        # If there are no covered lines, skip
-        if not fastcov_sources[source]["lines"]:
-            continue
-
         start_line = 0
         end_line = 0
         for i, line in enumerate(getSourceLines(source, fallback_encodings), 1): #Start enumeration at line 1
