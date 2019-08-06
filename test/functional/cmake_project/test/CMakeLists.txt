@@ -24,3 +24,12 @@ add_executable(branch_test
 )
 
 add_test(NAME ctest_3 COMMAND branch_test)
+
+# Duplicate of test1... used to check that multiple tests touching same file increases coverage correctly
+add_executable(multitest
+    ../src/source1.cpp
+    ../src/source2.cpp
+    test1_2.cpp
+)
+
+add_test(NAME ctest_4 COMMAND multitest)
