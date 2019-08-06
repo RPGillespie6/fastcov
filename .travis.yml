@@ -6,6 +6,7 @@ language: minimal
 branches:
   only:
     - master
+    - /v\d+\.\d+/ # Match version tags i.e. 'v2.0'
 
 services:
   - docker
