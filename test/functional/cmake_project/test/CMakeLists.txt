@@ -17,3 +17,10 @@ add_executable(latin1_test
 )
 
 add_test(NAME ctest_2 COMMAND latin1_test)
+
+add_executable(branch_test
+    ../src/branches.cpp
+    branch_test.cpp
+)
+
+add_test(NAME ctest_3 COMMAND branch_test)

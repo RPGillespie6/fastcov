@@ -18,11 +18,20 @@ mkdir build && cd build
 cmake .. -G Ninja
 ninja
 
-# Run ctest_1
-ctest -R ctest_1
-
 # Erase coverage
 coverage erase
+
+# Generate GCDA
+ctest
+
+# Test zerocounters
+test `find . -name *.gcda | wc -l` -ne 0
+coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters
+test `find . -name *.gcda | wc -l` -eq 0
+
+# Run ctest_1
+${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters  # Clear previous test coverage
+ctest -R ctest_1
 
 # Test 1 (basic lcov info - no branches)
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ --lcov -o test1.actual.info
@@ -44,11 +53,6 @@ cmp test4.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files ../src/source1.cpp ../src/source2.cpp --lcov -o test5.actual.info
 cmp test5.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 
-# Test 6 (zerocounters)
-test `find . -name *.gcda | wc -l` -ne 0
-coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters
-test `find . -name *.gcda | wc -l` -eq 0
-
 # Test 7 (gcov version fail)
 if coverage run --append ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh ; then
     echo "Expected gcov version check to fail"
@@ -56,6 +60,7 @@ if coverage run --append ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh 
 fi
 
 # Run ctest_2
+${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters  # Clear previous test coverage
 ctest -R ctest_2
 
 # Check that the file has the right encoding
@@ -72,6 +77,23 @@ cmp test8.actual.info ${TEST_DIR}/expected_results/latin1_test.expected.info
 # Test 9 (lcov info - with non-utf8 encoding and no fallback)
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --lcov -o test9.actual.info
 cmp test9.actual.info ${TEST_DIR}/expected_results/latin1_test.expected.info
+
+
+# Run ctest_3
+${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters # Clear previous test coverage
+ctest -R ctest_3
+
+# Test 10 (lcov info - with inclusive branch filtering)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude /usr/include test/ --include-br-lines-starting-with if else --lcov -o include_branches_sw.actual.info
+cmp include_branches_sw.actual.info ${TEST_DIR}/expected_results/include_branches_sw.expected.info
+
+# Test 11 (lcov info - with exclusive branch filtering)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude /usr/include test/ --exclude-br-lines-starting-with for if else --lcov -o exclude_branches_sw.actual.info
+cmp exclude_branches_sw.actual.info ${TEST_DIR}/expected_results/exclude_branches_sw.expected.info
+
+# Test 12 (lcov info - with smart branch filtering)
+coverage run --append ${TEST_DIR}/fastcov.py --branch-coverage --gcov gcov-9 --exclude /usr/include test/ --lcov -o filter_branches.actual.info
+cmp filter_branches.actual.info ${TEST_DIR}/expected_results/filter_branches.expected.info
 
 # Write out coverage as xml
 coverage xml -o coverage.xml
