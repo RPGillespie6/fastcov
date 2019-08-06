@@ -23,7 +23,7 @@ int latinfoo(bool take_branch)
     }
     //LCOV_EXCL_STOP
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 1000; i++) { //LCOV_EXCL_STOP (dangling stop - should be ignored)
         x -= (i % 2) ? 1 : 2;
 
         if (take_branch)
