@@ -33,13 +33,25 @@ test `find . -name *.gcda | wc -l` -eq 0
 ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters  # Clear previous test coverage
 ctest -R ctest_1
 
-# Test 1 (basic lcov info - no branches)
+# Test 1 (basic report generation - no branches)
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ --lcov -o test1.actual.info
 cmp test1.actual.info ${TEST_DIR}/expected_results/test1.expected.info
 
-# Test 2 (basic lcov info - with branches)
+coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ --gcov-raw -o test1.actual.gcov.json
+${TEST_DIR}/json_cmp.py test1.actual.gcov.json test1.actual.gcov.json #Just check we can parse it for now... gcov race conditions make it hard to compare against expected
+
+coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ -o test1.actual.fastcov.json
+${TEST_DIR}/json_cmp.py test1.actual.fastcov.json ${TEST_DIR}/expected_results/test1.expected.fastcov.json
+
+# Test 2 (basic report info - with branches)
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --lcov -o test2.actual.info
 cmp test2.actual.info ${TEST_DIR}/expected_results/test2.expected.info
+
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --gcov-raw -o test2.actual.gcov.json
+${TEST_DIR}/json_cmp.py test2.actual.gcov.json test2.actual.gcov.json #Just check we can parse it for now... gcov race conditions make it hard to compare against expected
+
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ -o test2.actual.fastcov.json
+${TEST_DIR}/json_cmp.py test2.actual.fastcov.json ${TEST_DIR}/expected_results/test2.expected.fastcov.json
 
 # Test 3 (basic lcov info - with branches; equivalent --include)
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --include src/ --lcov -o test3.actual.info
