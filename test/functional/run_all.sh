@@ -58,6 +58,13 @@ fi
 # Run ctest_2
 ctest -R ctest_2
 
+# Check that the file has the right encoding
+ENCODING=$(file --mime-encoding ../src/latin1_enc.cpp)
+if [ "${ENCODING}" != "../src/latin1_enc.cpp: iso-8859-1" ]; then
+    echo "Expected file to have non-utf8 encoding"
+    exit 1
+fi
+
 # Test 8 (lcov info - with non-utf8 encoding and fallback)
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --fallback-encodings latin1 --lcov -o test8.actual.info
 cmp test8.actual.info ${TEST_DIR}/expected_results/latin1_test.expected.info
