@@ -3,11 +3,11 @@
 [![PyPI Version](https://img.shields.io/pypi/v/fastcov.svg)](https://pypi.org/project/fastcov/)
 
 # fastcov
-A massively parallel gcov wrapper for generating intermediate coverage formats *fast*
+A parallelized gcov wrapper for generating intermediate coverage formats *fast*
 
-The goal of fastcov is to generate code coverage intermediate formats *as fast as possible*, even for large projects with hundreds of gcda objects. The intermediate formats may then be consumed by a report generator such as lcov's genhtml, or a dedicated front end such as coveralls. fastcov was originally designed to be a drop-in replacement for lcov (application coverage only, not kernel coverage).
+The goal of fastcov is to generate code coverage intermediate formats *as fast as possible*, even for large projects with hundreds of gcda objects. The intermediate formats may then be consumed by a report generator such as lcov's genhtml, or a dedicated front end such as coveralls, codecov, etc. fastcov was originally designed to be a drop-in replacement for lcov (application coverage only, not kernel coverage).
 
-Currently the only intermediate formats supported are gcov json format, fastcov json format, and lcov info format. Adding support for other formats should require just a few lines of python to transform gcov json format to the desired shape.
+Currently the only intermediate formats supported are gcov json format, fastcov json format, and lcov info format. Adding support for other formats should require just a few lines of python to transform fastcov json format to the desired shape.
 
 In order to achieve the speed gains, a few constraints apply:
 
@@ -15,7 +15,7 @@ In order to achieve the speed gains, a few constraints apply:
 
 These versions of GCOV have support for JSON intermediate format as well as streaming report data straight to stdout. This second feature (the ability for gcov to stream report data to stdout) is critical - without it, fastcov cannot run multiple instances of gcov in parallel without loss of correctness.
 
-If your linux distribution doesn't ship with GCC 9, the current easiest way (in my opinion) to try out fastcov is to use the fastcov docker image, which has a GCC 9 compiler, Python3, and CMake inside:
+If your linux distribution doesn't ship with GCC 9, the current easiest way (in my opinion) to try out fastcov is to use the fastcov docker image, which has GCC 9 compilers (`gcc-9` and `g++-9`), Python3, and CMake inside:
 
 ```bash
 docker pull rpgillespie6/fastcov:latest
@@ -35,30 +35,19 @@ If you use CMake, you are almost certainly satisfying this second constraint (un
 
 ## Quick Start
 
-Assuming you now have access to GCC 9, fastcov is easy to use:
+Assuming you have docker, fastcov is easy to use:
 
-(Optional - if using docker image):
 ```bash
-$ docker run -it --rm -v ${PWD}:/work -w /work -u $(id -u ${USER}):$(id -g ${USER}) rpgillespie6/fastcov
-$ <build project>
-```
-
-Once the project is built:
-```bash
-$ cd build_dir
-$ fastcov.py --zerocounters
+$ docker pull rpgillespie6/fastcov
+$ docker run -it --rm -v ${PWD}:/mnt/workspace -w /mnt/workspace -u $(id -u ${USER}):$(id -g ${USER}) rpgillespie6/fastcov
+$ <build project> # Make sure to compile with gcc-9 or g++-9 and to pass "-g -O0 -fprofile-arcs -ftest-coverage" to all gcc/g++ statements
 $ <run unit tests>
-$ fastcov.py --exclude /usr/include --lcov -o report.info
+$ fastcov.py --gcov gcov-9 --exclude /usr/include --lcov -o report.info
 $ genhtml -o code_coverage report.info
+$ firefox code_coverage/index.html
 ```
 
-Note that many of the options (such as `--exclude`) can take a list of parameters. For example, you could do something like:
-
-```bash
-$ fastcov.py --exclude /usr/include test/ ext/ --lcov -o report.info
-```
-
-Check out `fastcov.py --help` for more features and filtering options!
+See the [example](example/) directory for a working CMake example.
 
 ## Installation
 
@@ -66,7 +55,7 @@ A minimum of Python 3.5 is currently required.
 
 Fastcov is a single source python tool. That means you can simply copy `fastcov.py` from this repository and run it directly with no other hassle.
 
-However, fastcov is also available as a Python3 package that can be installed via pip3.
+However, fastcov is also available as a Python3 package that can be installed via pip.
 
 Install newest stable fastcov release from PyPI:
 
@@ -74,11 +63,34 @@ Install newest stable fastcov release from PyPI:
 $ pip3 install fastcov
 ```
 
-Install development version from GitHub:
+Or install the bleeding edge version from GitHub:
 
 ```bash
 $ pip3 install git+https://github.com/rpgillespie6/fastcov.git
 ```
+
+## Filtering Options
+
+Fastcov uses *substring matching* (not regex) for all of its filtering options. Furthermore, all filtering options take a list of parameters as arguments.
+
+Here are some common filtering combinations you may find useful:
+
+```bash
+$ fastcov.py --exclude /usr/include test/ # Exclude system header files and test files from final report
+$ fastcov.py --include src/ # Only include files with "src/" in its path in the final report
+$ fastcov.py --source-files ../src/source1.cpp ../src/source2.cpp # Only include exactly ../src/source1.cpp and ../src/source2.cpp in the final rpeort
+$ fastcov.py --branch-coverage # Only include most useful branches (discards exceptional branches and initializer list branches)
+$ fastcov.py --exceptional-branch-coverage # Include ALL branches in coverage report
+```
+
+Branch filters furthermore can stack:
+
+```bash
+$ fastcov.py --branch-coverage --include-br-lines-starting-with if else       # Only include branch coverage for lines starting with "if" or "else"
+$ fastcov.py --branch-coverage --exclude-br-lines-starting-with assert ASSERT # Don't include coverage for lines starting with "assert" or "ASSERT"
+```
+
+Technically it's possible to include both `--include-br-lines-starting-with` and `--exclude-br-lines-starting-with`, though I'm not sure how useful that would be. Fastcov will always apply `--include-br-lines-starting-with` first, and then `--exclude-br-lines-starting-with` second.
 
 ## Benchmarks
 
