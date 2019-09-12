@@ -65,6 +65,14 @@ cmp test4.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files ../src/source1.cpp ../src/source2.cpp --lcov -o test5.actual.info
 cmp test5.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 
+# Test (basic lcov info - with branches; gcno untested file coverage)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --process-gcno --source-files ../src/source1.cpp ../src/source2.cpp ../src/untested.cpp --lcov -o untested.actual.info
+cmp untested.actual.info ${TEST_DIR}/expected_results/untested.expected.info
+
+# Test (basic lcov info - with branches; gcno untested file coverage; equivalent --gcda-files)
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --process-gcno --gcda-files ./test/CMakeFiles/test1.dir/__/src/source1.cpp.gcno ./test/CMakeFiles/test1.dir/__/src/source2.cpp.gcno ./src/CMakeFiles/untested.dir/untested.cpp.gcno --lcov -o untested2.actual.info
+cmp untested2.actual.info ${TEST_DIR}/expected_results/untested.expected.info
+
 # Test (gcov version fail)
 if coverage run --append ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh ; then
     echo "Expected gcov version check to fail"
