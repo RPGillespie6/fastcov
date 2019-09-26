@@ -34,23 +34,23 @@ ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters  # Clear previous test cover
 ctest -R ctest_1
 
 # Test (basic report generation - no branches)
-coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ --lcov -o test1.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ --lcov -o test1.actual.info
 cmp test1.actual.info ${TEST_DIR}/expected_results/test1.expected.info
 
-coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ --gcov-raw -o test1.actual.gcov.json
+coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ --gcov-raw -o test1.actual.gcov.json
 ${TEST_DIR}/json_cmp.py test1.actual.gcov.json test1.actual.gcov.json #Just check we can parse it for now... gcov race conditions make it hard to compare against expected
 
-coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude test/ -o test1.actual.fastcov.json
+coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ -o test1.actual.fastcov.json
 ${TEST_DIR}/json_cmp.py test1.actual.fastcov.json ${TEST_DIR}/expected_results/test1.expected.fastcov.json
 
 # Test (basic report info - with branches)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --lcov -o test2.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ --lcov -o test2.actual.info
 cmp test2.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --gcov-raw -o test2.actual.gcov.json
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ --gcov-raw -o test2.actual.gcov.json
 ${TEST_DIR}/json_cmp.py test2.actual.gcov.json test2.actual.gcov.json #Just check we can parse it for now... gcov race conditions make it hard to compare against expected
 
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ -o test2.actual.fastcov.json
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ -o test2.actual.fastcov.json
 ${TEST_DIR}/json_cmp.py test2.actual.fastcov.json ${TEST_DIR}/expected_results/test2.expected.fastcov.json
 
 # Test (basic lcov info - with branches; equivalent --include)
@@ -91,11 +91,11 @@ if [ "${ENCODING}" != "../src/latin1_enc.cpp: iso-8859-1" ]; then
 fi
 
 # Test (lcov info - with non-utf8 encoding and fallback)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --fallback-encodings latin1 --lcov -o test8.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ --fallback-encodings latin1 --lcov -o test8.actual.info
 cmp test8.actual.info ${TEST_DIR}/expected_results/latin1_test.expected.info
 
 # Test (lcov info - with non-utf8 encoding and no fallback)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude test/ --lcov -o test9.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ --lcov -o test9.actual.info
 cmp test9.actual.info ${TEST_DIR}/expected_results/latin1_test.expected.info
 
 # Run ctest_3
@@ -103,15 +103,15 @@ ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters # Clear previous test covera
 ctest -R ctest_3
 
 # Test (lcov info - with inclusive branch filtering)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude /usr/include test/ --include-br-lines-starting-with if else --lcov -o include_branches_sw.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude /usr/include cmake_project/test/ --include-br-lines-starting-with if else --lcov -o include_branches_sw.actual.info
 cmp include_branches_sw.actual.info ${TEST_DIR}/expected_results/include_branches_sw.expected.info
 
 # Test (lcov info - with exclusive branch filtering)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude /usr/include test/ --exclude-br-lines-starting-with for if else --lcov -o exclude_branches_sw.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude /usr/include cmake_project/test/ --exclude-br-lines-starting-with for if else --lcov -o exclude_branches_sw.actual.info
 cmp exclude_branches_sw.actual.info ${TEST_DIR}/expected_results/exclude_branches_sw.expected.info
 
 # Test (lcov info - with smart branch filtering)
-coverage run --append ${TEST_DIR}/fastcov.py --branch-coverage --gcov gcov-9 --exclude /usr/include test/ --lcov -o filter_branches.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --branch-coverage --gcov gcov-9 --exclude /usr/include cmake_project/test/ --lcov -o filter_branches.actual.info
 cmp filter_branches.actual.info ${TEST_DIR}/expected_results/filter_branches.expected.info
 
 # Run ctest_all

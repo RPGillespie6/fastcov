@@ -27,7 +27,7 @@ import threading
 import subprocess
 import multiprocessing
 
-FASTCOV_VERSION = (1,3)
+FASTCOV_VERSION = (1,4)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
@@ -136,14 +136,14 @@ def processGcov(cwd, gcov, files, gcov_filter_options):
     # Check include filter
     if gcov_filter_options["include"]:
         for ex in gcov_filter_options["include"]:
-            if ex in gcov["file"]:
+            if ex in gcov["file_abs"]:
                 files.append(gcov)
                 break
         return
 
     # Check exclude filter
     for ex in gcov_filter_options["exclude"]:
-        if ex in gcov["file"]:
+        if ex in gcov["file_abs"]:
             return
 
     files.append(gcov)
