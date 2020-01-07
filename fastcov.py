@@ -27,7 +27,7 @@ import threading
 import subprocess
 import multiprocessing
 
-FASTCOV_VERSION = (1,4)
+FASTCOV_VERSION = (1,5)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
@@ -133,6 +133,11 @@ def processGcov(cwd, gcov, files, gcov_filter_options):
             files.append(gcov)
         return
 
+    # Check exclude filter
+    for ex in gcov_filter_options["exclude"]:
+        if ex in gcov["file_abs"]:
+            return
+
     # Check include filter
     if gcov_filter_options["include"]:
         for ex in gcov_filter_options["include"]:
@@ -140,11 +145,6 @@ def processGcov(cwd, gcov, files, gcov_filter_options):
                 files.append(gcov)
                 break
         return
-
-    # Check exclude filter
-    for ex in gcov_filter_options["exclude"]:
-        if ex in gcov["file_abs"]:
-            return
 
     files.append(gcov)
 
@@ -227,10 +227,9 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
         end_line = 0
         for i, line in enumerate(getSourceLines(source, fallback_encodings), 1): #Start enumeration at line 1
             if i in fastcov_sources[source]["branches"]:
-                if include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw): # Include branches starting with...
-                    del fastcov_sources[source]["branches"][i]
-
-                if exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw): # Exclude branches starting with...
+                del_exclude_br = exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw)
+                del_include_br = include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw)
+                if del_exclude_br or del_include_br:
                     del fastcov_sources[source]["branches"][i]
 
             if "LCOV_EXCL" not in line:

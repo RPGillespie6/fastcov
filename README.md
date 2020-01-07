@@ -83,6 +83,8 @@ $ fastcov.py --branch-coverage # Only include most useful branches (discards exc
 $ fastcov.py --exceptional-branch-coverage # Include ALL branches in coverage report
 ```
 
+It's possible to include *both* `--include` and `--exclude`. In this case, `--exclude` always takes priority. This could be used, for example, to include files that are in `src/` but not in `src/test/` by passing `--include src/ --exclude test/`.
+
 Branch filters furthermore can stack:
 
 ```bash
@@ -90,7 +92,7 @@ $ fastcov.py --branch-coverage --include-br-lines-starting-with if else       # 
 $ fastcov.py --branch-coverage --exclude-br-lines-starting-with assert ASSERT # Don't include coverage for lines starting with "assert" or "ASSERT"
 ```
 
-Technically it's possible to include both `--include-br-lines-starting-with` and `--exclude-br-lines-starting-with`, though I'm not sure how useful that would be. Fastcov will always apply `--include-br-lines-starting-with` first, and then `--exclude-br-lines-starting-with` second.
+It's possible to include *both* `--include-br-lines-starting-with` and `--exclude-br-lines-starting-with`. In this case, the branch will be removed if either the line does not start with one of `--include-br-lines-starting-with` or the line does start with one of `--exclude-br-lines-starting-with`. This could be used, for example, to include branches starting with `else` but not with `else if` by passing `--include-br-lines-starting-with else --exclude-br-lines-starting-with "else if"`.
 
 ## Benchmarks
 
