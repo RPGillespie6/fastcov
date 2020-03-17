@@ -173,39 +173,39 @@ def dumpToLcovInfo(fastcov_json, output):
     with open(output, "w") as f:
         sources = fastcov_json["sources"]
         for sf in sorted(sources.keys()):
-            data = sources[sf]
-            # NOTE: TN stands for "Test Name" and appears to be unimplemented, but lcov includes it, so we do too...
-            f.write("TN:\n")
-            f.write("SF:{}\n".format(sf)) #Source File
+            for tn in sorted(sources[sf].keys()):
+                data = sources[sf][tn]
+                f.write("TN:{}\n".format(tn)) #Test Name - used mainly in conjuction with genhtml --show-details
+                f.write("SF:{}\n".format(sf)) #Source File
 
-            fn_miss = 0
-            fn = []
-            fnda = []
-            for function, fdata in data["functions"].items():
-                fn.append((fdata["start_line"], function))  # Function Start Line
-                fnda.append((fdata["execution_count"], function))  # Function Hits
-                fn_miss += int(fdata["execution_count"] == 0)
-            # NOTE: lcov sorts FN, but not FNDA.
-            for v in sorted(fn):
-                f.write("FN:{},{}\n".format(*v))
-            for v in sorted(fnda):
-                f.write("FNDA:{},{}\n".format(*v))
-            f.write("FNF:{}\n".format(len(data["functions"])))               #Functions Found
-            f.write("FNH:{}\n".format((len(data["functions"]) - fn_miss)))   #Functions Hit
+                fn_miss = 0
+                fn = []
+                fnda = []
+                for function, fdata in data["functions"].items():
+                    fn.append((fdata["start_line"], function))  # Function Start Line
+                    fnda.append((fdata["execution_count"], function))  # Function Hits
+                    fn_miss += int(fdata["execution_count"] == 0)
+                # NOTE: lcov sorts FN, but not FNDA.
+                for v in sorted(fn):
+                    f.write("FN:{},{}\n".format(*v))
+                for v in sorted(fnda):
+                    f.write("FNDA:{},{}\n".format(*v))
+                f.write("FNF:{}\n".format(len(data["functions"])))               #Functions Found
+                f.write("FNH:{}\n".format((len(data["functions"]) - fn_miss)))   #Functions Hit
 
-            if data["branches"]:
-                dumpBranchCoverageToLcovInfo(f, data["branches"])
+                if data["branches"]:
+                    dumpBranchCoverageToLcovInfo(f, data["branches"])
 
-            line_miss = 0
-            da = []
-            for line_num, count in data["lines"].items():
-                da.append((line_num, count))
-                line_miss += int(count == 0)
-            for v in sorted(da):
-                f.write("DA:{},{}\n".format(*v))  # Line
-            f.write("LF:{}\n".format(len(data["lines"])))                 #Lines Found
-            f.write("LH:{}\n".format((len(data["lines"]) - line_miss)))   #Lines Hit
-            f.write("end_of_record\n")
+                line_miss = 0
+                da = []
+                for line_num, count in data["lines"].items():
+                    da.append((line_num, count))
+                    line_miss += int(count == 0)
+                for v in sorted(da):
+                    f.write("DA:{},{}\n".format(*v))  # Line
+                f.write("LF:{}\n".format(len(data["lines"])))                 #Lines Found
+                f.write("LH:{}\n".format((len(data["lines"]) - line_miss)))   #Lines Hit
+                f.write("end_of_record\n")
 
 def getSourceLines(source, fallback_encodings=[]):
     """Return a list of lines from the provided source, trying to decode with fallback encodings if the default fails"""
@@ -225,38 +225,43 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
     for source in chunk:
         start_line = 0
         end_line = 0
-        for i, line in enumerate(getSourceLines(source, fallback_encodings), 1): #Start enumeration at line 1
-            if i in fastcov_sources[source]["branches"]:
-                del_exclude_br = exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw)
-                del_include_br = include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw)
-                if del_exclude_br or del_include_br:
-                    del fastcov_sources[source]["branches"][i]
+        # Start enumeration at line 1 because the first line of the file is line 1 not 0
+        for i, line in enumerate(getSourceLines(source, fallback_encodings), 1):
+            # Cycle through test names (likely only 1)
+            for test_name in fastcov_sources[source]:
+                fastcov_data = fastcov_sources[source][test_name]
 
-            if "LCOV_EXCL" not in line:
-                continue
+                if i in fastcov_data["branches"]:
+                    del_exclude_br = exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw)
+                    del_include_br = include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw)
+                    if del_exclude_br or del_include_br:
+                        del fastcov_data["branches"][i]
 
-            if "LCOV_EXCL_LINE" in line:
-                for key in ["lines", "branches"]:
-                    if i in fastcov_sources[source][key]:
-                        del fastcov_sources[source][key][i]
-            elif "LCOV_EXCL_START" in line:
-                start_line = i
-            elif "LCOV_EXCL_STOP" in line:
-                end_line = i
-
-                if not start_line:
-                    end_line = 0
+                if "LCOV_EXCL" not in line:
                     continue
 
-                for key in ["lines", "branches"]:
-                    for line_num in list(fastcov_sources[source][key].keys()):
-                        if start_line <= line_num <= end_line:
-                            del fastcov_sources[source][key][line_num]
+                if "LCOV_EXCL_LINE" in line:
+                    for key in ["lines", "branches"]:
+                        if i in fastcov_data[key]:
+                            del fastcov_data[key][i]
+                elif "LCOV_EXCL_START" in line:
+                    start_line = i
+                elif "LCOV_EXCL_STOP" in line:
+                    end_line = i
 
-                start_line = end_line = 0
-            elif "LCOV_EXCL_BR_LINE" in line:
-                if i in fastcov_sources[source]["branches"]:
-                    del fastcov_sources[source]["branches"][i]
+                    if not start_line:
+                        end_line = 0
+                        continue
+
+                    for key in ["lines", "branches"]:
+                        for line_num in list(fastcov_data[key].keys()):
+                            if start_line <= line_num <= end_line:
+                                del fastcov_data[key][line_num]
+
+                    start_line = end_line = 0
+                elif "LCOV_EXCL_BR_LINE" in line:
+                    if i in fastcov_data["branches"]:
+                        del fastcov_data["branches"][i]
 
 def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
@@ -335,28 +340,30 @@ def distillLine(line_raw, lines, branches, include_exceptional_branches):
             branches[line_number] += [0] * (glen - blen)
         branches[line_number][i] += int(branch["count"])
 
-def distillSource(source_raw, sources, include_exceptional_branches):
+def distillSource(source_raw, sources, test_name, include_exceptional_branches):
     source_name = source_raw["file_abs"]
     if source_name not in sources:
         sources[source_name] = {
-            "functions": {},
-            "branches": {},
-            "lines": {},
+            test_name: {
+                "functions": {},
+                "branches": {},
+                "lines": {}
+            }
         }
 
     for function in source_raw["functions"]:
-        distillFunction(function, sources[source_name]["functions"])
+        distillFunction(function, sources[source_name][test_name]["functions"])
 
     for line in source_raw["lines"]:
-        distillLine(line, sources[source_name]["lines"], sources[source_name]["branches"], include_exceptional_branches)
+        distillLine(line, sources[source_name][test_name]["lines"], sources[source_name][test_name]["branches"], include_exceptional_branches)
 
-def distillReport(report_raw, include_exceptional_branches):
+def distillReport(report_raw, args):
     report_json = {
         "sources": {}
     }
 
     for source in report_raw:
-        distillSource(source, report_json["sources"], include_exceptional_branches)
+        distillSource(source, report_json["sources"], args.test_name, args.xbranchcoverage)
 
     return report_json
 
@@ -370,6 +377,144 @@ def getGcovFilterOptions(args):
         "include": args.includepost,
         "exclude": args.excludepost,
     }
+
+def addDicts(dict1, dict2):
+    """Add dicts together by value. i.e. addDicts({"a":1,"b":0}, {"a":2}) == {"a":3,"b":0}"""
+    result = {k:v for k,v in dict1.items()}
+    for k,v in dict2.items():
+        if k in result:
+            result[k] += v
+        else:
+            result[k] = v
+
+    return result
+
+def addLists(list1, list2):
+    """Add lists together by value. i.e. addLists([1,1], [2,2]) == [3,3]"""
+    if len(list1) == len(list2):
+        return [b1 + b2 for b1, b2 in zip(list1, list2)]
+    else:
+        # One report had different number branch measurements than the other, print a warning
+        sys.stderr.write("Warning: possible loss of correctness. Different number of branches for same line when combining reports ({} vs {})\n".format(list1, list2))
+        return list1 if len(list1) > len(list2) else list2
+
+def combineReports(base, overlay):
+    for source, scov in overlay["sources"].items():
+        # Combine Source Coverage
+        if source not in base["sources"]:
+            base["sources"][source] = scov
+            continue
+
+        for test_name, tcov in scov.items():
+            # Combine Source Test Name Coverage
+            if test_name not in base["sources"][source]:
+                base["sources"][source][test_name] = tcov
+                continue
+
+            # Drill down and create convenience variable
+            base_data = base["sources"][source][test_name]
+
+            # Combine Line Coverage
+            base_data["lines"] = addDicts(base_data["lines"], tcov["lines"])
+
+            # Combine Branch Coverage
+            for branch, cov in tcov["branches"].items():
+                if branch not in base_data["branches"]:
+                    base_data["branches"][branch] = cov
+                else:
+                    base_data["branches"][branch] = addLists(base_data["branches"][branch], cov)
+
+            # Combine Function Coverage
+            for function, cov in tcov["functions"].items():
+                if function not in base_data["functions"]:
+                    base_data["functions"][function] = cov
+                else:
+                    base_data["functions"][function]["execution_count"] += cov["execution_count"]
+
+def parseInfo(path):
+    """Parse an lcov .info file into fastcov json"""
+    fastcov_json = {
+        "sources": {}
+    }
+
+    with open(path) as f:
+        for line in f:
+            if line.startswith("TN:"):
+                current_test_name = line[3:].strip()
+            elif line.startswith("SF:"):
+                current_sf = line[3:].strip()
+                fastcov_json["sources"][current_sf] = {
+                    current_test_name: {
+                        "functions": {},
+                        "branches": {},
+                        "lines": {},
+                    }
+                }
+                current_data = fastcov_json["sources"][current_sf][current_test_name]
+            elif line.startswith("FN:"):
+                line_num, function_name = line[3:].strip().split(",")
+                current_data["functions"][function_name] = {}
+                current_data["functions"][function_name]["start_line"] = int(line_num)
+            elif line.startswith("FNDA:"):
+                count, function_name = line[5:].strip().split(",")
+                current_data["functions"][function_name]["execution_count"] = int(count)
+            elif line.startswith("DA:"):
+                line_num, count = line[3:].strip().split(",")
+                current_data["lines"][line_num] = int(count)
+            elif line.startswith("BRDA:"):
+                branch_tokens = line[5:].strip().split(",")
+                line_num, count = branch_tokens[0], branch_tokens[-1]
+                if line_num not in current_data["branches"]:
+                    current_data["branches"][line_num] = []
+                current_data["branches"][line_num].append(int(count))
+
+    return fastcov_json
+
+def convertKeysToInt(report):
+    for source in report["sources"].keys():
+        for test_name in report["sources"][source].keys():
+            report_data = report["sources"][source][test_name]
+            report_data["lines"]    = {int(k):v for k,v in report_data["lines"].items()}
+            report_data["branches"] = {int(k):v for k,v in report_data["branches"].items()}
+
+def parseAndCombine(paths):
+    base_report = {}
+
+    for path in paths:
+        if path.endswith(".json"):
+            with open(path) as f:
+                report = json.load(f)
+        elif path.endswith(".info"):
+            report = parseInfo(path)
+        else:
+            sys.stderr.write("Currently only fastcov .json and lcov .info supported for combine operations, aborting due to {}...\n".format(path))
+            sys.exit(3)
+
+        # In order for sorting to work later when we serialize,
+        # make sure integer keys are int
+        convertKeysToInt(report)
+
+        if not base_report:
+            base_report = report
+            log("Setting {} as base report".format(path))
+        else:
+            combineReports(base_report, report)
+            log("Adding {} to base report".format(path))
+
+    return base_report
+
+def combineCoverageFiles(args):
+    log("Performing combine operation")
+    fastcov_json = parseAndCombine(args.combine)
+    dumpFile(fastcov_json, args)
+
+def dumpFile(fastcov_json, args):
+    if args.lcov:
+        dumpToLcovInfo(fastcov_json, args.output)
+        log("Created lcov info file '{}'".format(args.output))
+    else:
+        dumpToJson(fastcov_json, args.output)
+        log("Created fastcov json file '{}'".format(args.output))
 
 def tupleToDotted(tup):
     return ".".join(map(str, tup))
@@ -401,15 +546,17 @@ def parseArgs():
                                                                                             This needs to be set if invoking fastcov from somewhere other than the base compiler directory.')
 
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: {}).'.format(multiprocessing.cpu_count()))
-    parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5). \
-                                                                                                       If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherwise fastcov will spawn only 1 thread to process all of them.')
+    parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5,    help='Minimum number of files a thread should process (default: 5). \
+                                                                                                          If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherwise fastcov will spawn only 1 thread to process all of them.')
 
     parser.add_argument('-F', '--fallback-encodings', dest='fallback_encodings', nargs="+", metavar='', default=[], help='List of encodings to try if opening a source file with the default fails (i.e. latin1, etc.). This option is not usually needed.')
 
-    parser.add_argument('-l', '--lcov',     dest='lcov',     action="store_true", help='Output in lcov info format instead of fastcov json')
-    parser.add_argument('-r', '--gcov-raw', dest='gcov_raw', action="store_true", help='Output in gcov raw json instead of fastcov json')
-    parser.add_argument('-o', '--output',  dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
-    parser.add_argument('-q', '--quiet', dest='quiet', action="store_true", help='Suppress output to stdout')
+    parser.add_argument('-l', '--lcov',   dest='lcov',   action="store_true",     help='Output in lcov info format instead of fastcov json')
+    parser.add_argument('-o', '--output', dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
+    parser.add_argument('-q', '--quiet',  dest='quiet',  action="store_true",     help='Suppress output to stdout')
+
+    parser.add_argument('-t', '--test-name',     dest='test_name', default="", help='Specify a test name for the coverage. Equivalent to lcov\'s `-t`.')
+    parser.add_argument('-C', '--add-tracefile', dest='combine',   nargs="+",  help='Combine multiple coverage files into one. If this flag is specified, fastcov will do a combine operation instead invoking gcov. Equivalent to lcov\'s `-a`.')
 
     parser.add_argument('-v', '--version', action="version", version='%(prog)s {version}'.format(version=__version__), help="Show program's version number and exit")
 
@@ -442,6 +589,11 @@ def main():
     # Need at least python 3.5 because of use of recursive glob
     checkPythonVersion(sys.version_info[0:2])
 
+    # Combine operation?
+    if args.combine:
+        combineCoverageFiles(args)
+        return
+
     # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
     checkGcovVersion(getGcovVersion(args.gcov))
 
@@ -469,7 +621,7 @@ def main():
     log("Processed {} .gcov files ({} total, {} skipped)".format(gcov_total - gcov_skipped, gcov_total, gcov_skipped))
 
     # Distill all the extraneous info gcov gives us down to the core report
-    fastcov_json = distillReport(intermediate_json_files, args.xbranchcoverage)
+    fastcov_json = distillReport(intermediate_json_files, args)
     log("Aggregated raw gcov JSON into fastcov JSON report")
 
     # Scan for exclusion markers
@@ -477,15 +629,7 @@ def main():
     log("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     # Dump to desired file format
-    if args.lcov:
-        dumpToLcovInfo(fastcov_json, args.output)
-        log("Created lcov info file '{}'".format(args.output))
-    elif args.gcov_raw:
-        dumpToJson(intermediate_json_files, args.output)
-        log("Created gcov raw json file '{}'".format(args.output))
-    else:
-        dumpToJson(fastcov_json, args.output)
-        log("Created fastcov json file '{}'".format(args.output))
+    dumpFile(fastcov_json, args)
 
 # Set package version... it's way down here so that we can call tupleToDotted
 __version__ = tupleToDotted(FASTCOV_VERSION)
