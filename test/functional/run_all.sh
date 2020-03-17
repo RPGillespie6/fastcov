@@ -37,18 +37,16 @@ ctest -R ctest_1
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ --lcov -o test1.actual.info
 cmp test1.actual.info ${TEST_DIR}/expected_results/test1.expected.info
 
-coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ --gcov-raw -o test1.actual.gcov.json
-${TEST_DIR}/json_cmp.py test1.actual.gcov.json test1.actual.gcov.json #Just check we can parse it for now... gcov race conditions make it hard to compare against expected
-
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ -o test1.actual.fastcov.json
 ${TEST_DIR}/json_cmp.py test1.actual.fastcov.json ${TEST_DIR}/expected_results/test1.expected.fastcov.json
+
+# Test the setting of the "testname" field
+coverage run --append ${TEST_DIR}/fastcov.py -t FunctionalTest1 --gcov gcov-9 --exclude cmake_project/test/ --lcov -o test1.tn.actual.info
+cmp test1.tn.actual.info ${TEST_DIR}/expected_results/test1.tn.expected.info
 
 # Test (basic report info - with branches)
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ --lcov -o test2.actual.info
 cmp test2.actual.info ${TEST_DIR}/expected_results/test2.expected.info
-
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ --gcov-raw -o test2.actual.gcov.json
-${TEST_DIR}/json_cmp.py test2.actual.gcov.json test2.actual.gcov.json #Just check we can parse it for now... gcov race conditions make it hard to compare against expected
 
 coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude cmake_project/test/ -o test2.actual.fastcov.json
 ${TEST_DIR}/json_cmp.py test2.actual.fastcov.json ${TEST_DIR}/expected_results/test2.expected.fastcov.json
@@ -78,6 +76,30 @@ if coverage run --append ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh 
     echo "Expected gcov version check to fail"
     exit 1
 fi
+
+# Combine operation
+coverage run --append ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test2.expected.info ${TEST_DIR}/expected_results/test1.tn.expected.info --lcov -o combine1.actual.info
+cmp combine1.actual.info ${TEST_DIR}/expected_results/combine1.expected.info
+
+# Combine operation - Mix and Match json/info
+coverage run --append ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test2.expected.fastcov.json ${TEST_DIR}/expected_results/test1.tn.expected.info --lcov -o combine1.actual.info
+cmp combine1.actual.info ${TEST_DIR}/expected_results/combine1.expected.info
+
+# Combine operation- source files across coverage reports
+${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --process-gcno --source-files ../src/source1.cpp --lcov -o combine.source1.actual.info
+${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --process-gcno --source-files ../src/source2.cpp --lcov -o combine.source2.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py -C combine.source1.actual.info combine.source2.actual.info --lcov -o combine2.actual.info
+cmp combine2.actual.info ${TEST_DIR}/expected_results/combine2.expected.info
+
+# Combine files with different function inclusion
+coverage run --append ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/combine3b.info ${TEST_DIR}/expected_results/combine3a.info --lcov -o combine3.actual.info
+cmp combine3.actual.info ${TEST_DIR}/expected_results/combine3.expected.info
+
+# Combine files with different test names
+# Expected result generated with:
+# lcov -a combine4a.info -a combine4b.info -a combine4c.info --rc lcov_branch_coverage=1 -o combine4.expected.info
+coverage run --append ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/combine4a.info ${TEST_DIR}/expected_results/combine4b.info ${TEST_DIR}/expected_results/combine4c.info --lcov -o combine4.actual.info
+cmp combine4.actual.info ${TEST_DIR}/expected_results/combine4.expected.info
 
 # Run ctest_2
 ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters  # Clear previous test coverage
@@ -124,3 +146,4 @@ cmp multitest.actual.info ${TEST_DIR}/expected_results/multitest.expected.info
 
 # Write out coverage as xml
 coverage xml -o coverage.xml
+# coverage html # Generate HTML report

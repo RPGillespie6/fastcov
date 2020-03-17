@@ -32,3 +32,27 @@ def test_chunk():
     assert len(list(fastcov.chunks(chunk_me, 4))) == len(expected)
     for i, chunk in enumerate(fastcov.chunks(chunk_me, 4)):
         assert chunk == expected[i]
+
+def test_addDicts():
+    dict1 = {"a": 1}
+    dict2 = {"a": 0, "b": 1, "c": 200}
+
+    # Should return a new dict
+    result = fastcov.addDicts(dict1, dict2)
+    assert(result == {"a": 1, "b": 1, "c": 200})
+
+    result2 = fastcov.addDicts(result, dict2)
+    assert(result2 == {"a": 1, "b": 2, "c": 400})
+
+def test_addLists():
+    list1 = [1,2,3,4]
+    list2 = [1,0,0,4]
+    list3 = [1,0]
+
+    # Should return a new list
+    result = fastcov.addLists(list1, list2)
+    assert(result == [2,2,3,8])
+
+    # if lens are mismatched, make sure it chooses the bigger one
+    result = fastcov.addLists(list1, list3)
+    assert(result == list1)
