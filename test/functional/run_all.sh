@@ -34,7 +34,7 @@ ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters  # Clear previous test cover
 ctest -R ctest_1
 
 # Test (basic report generation - no branches)
-coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ --lcov -o test1.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --verbose --exclude cmake_project/test/ --lcov -o test1.actual.info
 cmp test1.actual.info ${TEST_DIR}/expected_results/test1.expected.info
 
 coverage run --append ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude cmake_project/test/ -o test1.actual.fastcov.json
@@ -52,15 +52,15 @@ coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gco
 ${TEST_DIR}/json_cmp.py test2.actual.fastcov.json ${TEST_DIR}/expected_results/test2.expected.fastcov.json
 
 # Test (basic lcov info - with branches; equivalent --include)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --include src/ --lcov -o test3.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --verbose --include src/ --lcov -o test3.actual.info
 cmp test3.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 
 # Test (basic lcov info - with branches; equivalent --exclude-gcda)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --exclude-gcda test1.cpp.gcda --lcov -o test4.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --verbose --exclude-gcda test1.cpp.gcda --lcov -o test4.actual.info
 cmp test4.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 
 # Test (basic lcov info - with branches; equivalent --source-files)
-coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files ../src/source1.cpp ../src/source2.cpp --lcov -o test5.actual.info
+coverage run --append ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --verbose --source-files ../src/source1.cpp ../src/source2.cpp --lcov -o test5.actual.info
 cmp test5.actual.info ${TEST_DIR}/expected_results/test2.expected.info
 
 # Test (basic lcov info - with branches; gcno untested file coverage)
@@ -146,4 +146,4 @@ cmp multitest.actual.info ${TEST_DIR}/expected_results/multitest.expected.info
 
 # Write out coverage as xml
 coverage xml -o coverage.xml
-# coverage html # Generate HTML report
+coverage html # Generate HTML report

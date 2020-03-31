@@ -19,7 +19,8 @@ ninja
 ctest
 
 # Run fastcov with smart branch filtering, as well as system header (/usr/include) and cmake project test file filtering
-${BASE_DIR}/fastcov.py -t ExampleTest --gcov gcov-9 --branch-coverage --exclude /usr/include cmake_project/test/ --lcov -o example.info
+# ${BASE_DIR}/fastcov.py -t ExampleTest --gcov gcov-9 --branch-coverage --include cmake_project/src/ --verbose --lcov -o example.info
+${BASE_DIR}/fastcov.py -t ExampleTest --gcov gcov-9 --branch-coverage --exclude /usr/include cmake_project/test/ --verbose --lcov -o example.info
 
 # Generate report with lcov's genhtml
 genhtml --branch-coverage example.info -o coverage_report
