@@ -22,6 +22,7 @@ import sys
 import glob
 import json
 import time
+import logging
 import argparse
 import threading
 import subprocess
@@ -36,12 +37,14 @@ START_TIME = time.monotonic()
 GCOVS_TOTAL = []
 GCOVS_SKIPPED = []
 
-def logger(line, quiet=True):
-    if not quiet:
-        print("[{:.3f}s] {}".format(stopwatch(), line))
+# Disable all logging in case developers are using this as a module
+logging.disable(level=logging.CRITICAL)
 
-# Global logger defaults to quiet in case developers are using as module
-log = logger
+class FastcovFormatter(logging.Formatter):
+    def format(self, record):
+        record.levelname = record.levelname.lower()
+        log_message = super(FastcovFormatter, self).format(record)
+        return "[{:.3f}s] {}".format(stopwatch(), log_message)
 
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
@@ -79,6 +82,7 @@ def getFilteredCoverageFiles(coverage_files, exclude):
     def excludeGcda(gcda):
         for ex in exclude:
             if ex in gcda:
+                logging.debug("Omitting %s due to '--exclude-gcda %s'", gcda, ex)
                 return False
         return True
     return list(filter(excludeGcda, coverage_files))
@@ -89,7 +93,8 @@ def findCoverageFiles(cwd, coverage_files, use_gcno):
         coverage_type = "gcno" if use_gcno else "gcda"
         coverage_files = glob.glob(os.path.join(os.path.abspath(cwd), "**/*." + coverage_type), recursive=True)
 
-    log("Found {} coverage files ({})".format(len(coverage_files), coverage_type))
+    logging.info("Found {} coverage files ({})".format(len(coverage_files), coverage_type))
+    logging.debug("Coverage files found:\n    %s", "\n    ".join(coverage_files))
     return coverage_files
 
 def gcovWorker(cwd, gcov, files, chunk, gcov_filter_options, branch_coverage):
@@ -117,7 +122,7 @@ def processGcdas(cwd, gcov, jobs, coverage_files, gcov_filter_options, branch_co
         threads.append(t)
         t.start()
 
-    log("Spawned {} gcov threads, each processing at most {} coverage files".format(len(threads), chunk_size))
+    logging.info("Spawned {} gcov threads, each processing at most {} coverage files".format(len(threads), chunk_size))
     for t in threads:
         t.join()
 
@@ -131,22 +136,34 @@ def processGcov(cwd, gcov, files, gcov_filter_options):
     if gcov_filter_options["sources"]:
         if gcov["file_abs"] in gcov_filter_options["sources"]:
             files.append(gcov)
+            logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
+        else:
+            logging.debug("Skipping coverage for '%s' due to option '--source-files'", gcov["file_abs"])
         return
 
     # Check exclude filter
     for ex in gcov_filter_options["exclude"]:
         if ex in gcov["file_abs"]:
+            logging.debug("Skipping coverage for '%s' due to option '--exclude %s'", gcov["file_abs"], ex)
             return
 
     # Check include filter
     if gcov_filter_options["include"]:
+        included = False
         for ex in gcov_filter_options["include"]:
             if ex in gcov["file_abs"]:
+                included = True
                 files.append(gcov)
+                logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
                 break
+
+        if not included:
+            logging.debug("Skipping coverage for '%s' due to option '--include %s'", gcov["file_abs"], " ".join(gcov_filter_options["include"]))
+
         return
 
     files.append(gcov)
+    logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
 
 def processGcovs(cwd, gcov_files, gcov_filter_options):
     files = []
@@ -217,7 +234,7 @@ def getSourceLines(source, fallback_encodings=[]):
         except UnicodeDecodeError:
             pass
 
-    log("Warning: could not decode '{}' with {} or fallback encodings ({}); ignoring errors".format(source, default_encoding, ",".join(fallback_encodings)))
+    logging.warning("Could not decode '{}' with {} or fallback encodings ({}); ignoring errors".format(source, default_encoding, ",".join(fallback_encodings)))
     with open(source, errors="ignore") as f:
         return f.readlines()
 
@@ -272,7 +289,7 @@ def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branch
         threads.append(t)
         t.start()
 
-    log("Spawned {} threads each scanning at most {} source files".format(len(threads), chunk_size))
+    logging.info("Spawned {} threads each scanning at most {} source files".format(len(threads), chunk_size))
     for t in threads:
         t.join()
 
@@ -395,7 +412,7 @@ def addLists(list1, list2):
         return [b1 + b2 for b1, b2 in zip(list1, list2)]
     else:
         # One report had different number branch measurements than the other, print a warning
-        sys.stderr.write("Warning: possible loss of correctness. Different number of branches for same line when combining reports ({} vs {})\n".format(list1, list2))
+        logging.warning("Possible loss of correctness. Different number of branches for same line when combining reports ({} vs {})\n".format(list1, list2))
         return list1 if len(list1) > len(list2) else list2
 
 def combineReports(base, overlay):
@@ -496,25 +513,25 @@ def parseAndCombine(paths):
 
         if not base_report:
             base_report = report
-            log("Setting {} as base report".format(path))
+            logging.info("Setting {} as base report".format(path))
         else:
             combineReports(base_report, report)
-            log("Adding {} to base report".format(path))
+            logging.info("Adding {} to base report".format(path))
 
     return base_report
 
 def combineCoverageFiles(args):
-    log("Performing combine operation")
+    logging.info("Performing combine operation")
     fastcov_json = parseAndCombine(args.combine)
     dumpFile(fastcov_json, args)
 
 def dumpFile(fastcov_json, args):
     if args.lcov:
         dumpToLcovInfo(fastcov_json, args.output)
-        log("Created lcov info file '{}'".format(args.output))
+        logging.info("Created lcov info file '{}'".format(args.output))
     else:
         dumpToJson(fastcov_json, args.output)
-        log("Created fastcov json file '{}'".format(args.output))
+        logging.info("Created fastcov json file '{}'".format(args.output))
 
 def tupleToDotted(tup):
     return ".".join(map(str, tup))
@@ -558,16 +575,10 @@ def parseArgs():
     parser.add_argument('-t', '--test-name',     dest='test_name', default="", help='Specify a test name for the coverage. Equivalent to lcov\'s `-t`.')
     parser.add_argument('-C', '--add-tracefile', dest='combine',   nargs="+",  help='Combine multiple coverage files into one. If this flag is specified, fastcov will do a combine operation instead invoking gcov. Equivalent to lcov\'s `-a`.')
 
+    parser.add_argument('-V', '--verbose', dest="verbose", action="store_true", help="Print more detailed information about what fastcov is doing")
     parser.add_argument('-v', '--version', action="version", version='%(prog)s {version}'.format(version=__version__), help="Show program's version number and exit")
 
     args = parser.parse_args()
-
-    def arg_logger(line):
-        logger(line, quiet=args.quiet)
-
-    # Change global logger settings to reflect arguments
-    global log
-    log = arg_logger
 
     return args
 
@@ -583,8 +594,25 @@ def checkGcovVersion(version):
         sys.stderr.write("Minimum gcov version {} required, found {}\n".format(tupleToDotted(MINIMUM_GCOV), tupleToDotted(version)))
         sys.exit(2)
 
+def setupLogging(quiet, verbose):
+    handler = logging.StreamHandler()
+    handler.setFormatter(FastcovFormatter("[%(levelname)s]: %(message)s"))
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+
+    if not quiet:
+        logging.disable(level=logging.NOTSET) # Re-enable logging
+
+    if verbose:
+        root.setLevel(logging.DEBUG)
+
 def main():
     args = parseArgs()
+
+    # Setup logging
+    setupLogging(args.quiet, args.verbose)
 
     # Need at least python 3.5 because of use of recursive glob
     checkPythonVersion(sys.version_info[0:2])
@@ -603,12 +631,12 @@ def main():
     # If gcda/gcno filtering is enabled, filter them out now
     if args.excludepre:
         coverage_files = getFilteredCoverageFiles(coverage_files, args.excludepre)
-        log("Found {} coverage files after filtering".format(len(coverage_files)))
+        logging.info("Found {} coverage files after filtering".format(len(coverage_files)))
 
     # We "zero" the "counters" by simply deleting all gcda files
     if args.zerocounters:
         removeFiles(coverage_files)
-        log("Removed {} .gcda files".format(len(coverage_files)))
+        logging.info("Removed {} .gcda files".format(len(coverage_files)))
         return
 
     # Fire up one gcov per cpu and start processing gcdas
@@ -618,15 +646,16 @@ def main():
     # Summarize processing results
     gcov_total = sum(GCOVS_TOTAL)
     gcov_skipped = sum(GCOVS_SKIPPED)
-    log("Processed {} .gcov files ({} total, {} skipped)".format(gcov_total - gcov_skipped, gcov_total, gcov_skipped))
+    logging.info("Processed {} .gcov files ({} total, {} skipped)".format(gcov_total - gcov_skipped, gcov_total, gcov_skipped))
 
     # Distill all the extraneous info gcov gives us down to the core report
     fastcov_json = distillReport(intermediate_json_files, args)
-    log("Aggregated raw gcov JSON into fastcov JSON report")
+    logging.info("Aggregated raw gcov JSON into fastcov JSON report")
+    logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
 
     # Scan for exclusion markers
     scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
-    log("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
+    logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     # Dump to desired file format
     dumpFile(fastcov_json, args)

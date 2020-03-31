@@ -78,7 +78,7 @@ Here are some common filtering combinations you may find useful:
 ```bash
 $ fastcov.py --exclude /usr/include test/ # Exclude system header files and test files from final report
 $ fastcov.py --include src/ # Only include files with "src/" in its path in the final report
-$ fastcov.py --source-files ../src/source1.cpp ../src/source2.cpp # Only include exactly ../src/source1.cpp and ../src/source2.cpp in the final rpeort
+$ fastcov.py --source-files ../src/source1.cpp ../src/source2.cpp # Only include exactly ../src/source1.cpp and ../src/source2.cpp in the final report
 $ fastcov.py --branch-coverage # Only include most useful branches (discards exceptional branches and initializer list branches)
 $ fastcov.py --exceptional-branch-coverage # Include ALL branches in coverage report
 ```
