@@ -548,6 +548,7 @@ def parseArgs():
     parser.add_argument('-B', '--exceptional-branch-coverage', dest='xbranchcoverage', action="store_true", help='Include ALL branches in the coverage report (including potentially noisy exceptional branches).')
     parser.add_argument('-A', '--exclude-br-lines-starting-with', dest='exclude_branches_sw', nargs="+", metavar='', default=[], help='Exclude branches from lines starting with one of the provided strings (i.e. assert, return, etc.)')
     parser.add_argument('-a', '--include-br-lines-starting-with', dest='include_branches_sw', nargs="+", metavar='', default=[], help='Include only branches from lines starting with one of the provided strings (i.e. if, else, while, etc.)')
+    parser.add_argument('-X', '--no-exclusion', dest='no_exclusion', action="store_true", help='Suppress reading sources to find exclusions')
 
     # Capture untested file coverage as well via gcno
     parser.add_argument('-n', '--process-gcno', dest='use_gcno', action="store_true", help='Process both gcno and gcda coverage files. This option is useful for capturing untested files in the coverage report.')
@@ -657,8 +658,9 @@ def main():
     logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
 
     # Scan for exclusion markers
-    scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
-    logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
+    if not args.no_exclusion:
+        scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
+        logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     # Dump to desired file format
     dumpFile(fastcov_json, args)
