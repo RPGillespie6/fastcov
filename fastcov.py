@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright 2018-present, Bryan Gillespie
 """
     Author: Bryan Gillespie
+    https://github.com/RPGillespie6/fastcov
 
     A massively parallel gcov wrapper for generating intermediate coverage formats fast
 

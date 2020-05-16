@@ -1,6 +1,7 @@
 [![Build Status](https://travis-ci.com/RPGillespie6/fastcov.svg?branch=master)](https://travis-ci.com/RPGillespie6/fastcov)
 [![Code Coverage](https://img.shields.io/codecov/c/github/rpgillespie6/fastcov.svg)](https://codecov.io/gh/RPGillespie6/fastcov)
 [![PyPI Version](https://img.shields.io/pypi/v/fastcov.svg)](https://pypi.org/project/fastcov/)
+<!-- # SPDX-License-Identifier: MIT -->
 
 # fastcov
 A parallelized gcov wrapper for generating intermediate coverage formats *fast*
