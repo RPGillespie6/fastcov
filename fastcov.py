@@ -658,7 +658,7 @@ def main():
     logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
 
     # Scan for exclusion markers
-    if not args.no_exclusion:
+    if not args.skip_exclusion_markers:
         scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
