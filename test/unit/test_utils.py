@@ -48,11 +48,16 @@ def test_addLists():
     list1 = [1,2,3,4]
     list2 = [1,0,0,4]
     list3 = [1,0]
+    list4 = [9,9,9]
 
     # Should return a new list
     result = fastcov.addLists(list1, list2)
     assert(result == [2,2,3,8])
 
-    # if lens are mismatched, make sure it chooses the bigger one
+    # if lens are mismatched, make sure it overlays onto bigger one
     result = fastcov.addLists(list1, list3)
-    assert(result == list1)
+    assert(result == [2,2,3,4])
+
+    # if lens are mismatched, make sure it overlays onto bigger one
+    result = fastcov.addLists(list4, list1)
+    assert(result == [10,11,12,4])
