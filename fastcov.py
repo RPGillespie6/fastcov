@@ -31,7 +31,7 @@ import threading
 import subprocess
 import multiprocessing
 
-FASTCOV_VERSION = (1,5)
+FASTCOV_VERSION = (1,6)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
@@ -100,36 +100,52 @@ def findCoverageFiles(cwd, coverage_files, use_gcno):
     logging.debug("Coverage files found:\n    %s", "\n    ".join(coverage_files))
     return coverage_files
 
-def gcovWorker(cwd, gcov, files, chunk, gcov_filter_options, branch_coverage):
+def gcovWorker(q, args, chunk, gcov_filter_options):
+    base_report = {
+        "sources": {}
+    }
+
     gcov_args = "-it"
-    if branch_coverage:
+    if args.branchcoverage or args.xbranchcoverage:
         gcov_args += "b"
 
-    p = subprocess.Popen([gcov, gcov_args] + chunk, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    p = subprocess.Popen([args.gcov, gcov_args] + chunk, cwd=args.cdirectory, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     for line in iter(p.stdout.readline, b''):
         intermediate_json = json.loads(line.decode(sys.stdout.encoding))
-        intermediate_json_files = processGcovs(cwd, intermediate_json["files"], gcov_filter_options)
+        intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], gcov_filter_options)
         for f in intermediate_json_files:
-            files.append(f) #thread safe, there might be a better way to do this though
+            distillSource(f, base_report["sources"], args.test_name, args.xbranchcoverage)
         GCOVS_TOTAL.append(len(intermediate_json["files"]))
         GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
+
     p.wait()
+    q.put(base_report)
 
-def processGcdas(cwd, gcov, jobs, coverage_files, gcov_filter_options, branch_coverage, min_chunk_size):
-    chunk_size = max(min_chunk_size, int(len(coverage_files) / jobs) + 1)
+def processGcdas(args, coverage_files, gcov_filter_options):
+    chunk_size = max(args.minimum_chunk, int(len(coverage_files) / args.jobs) + 1)
 
-    threads = []
-    intermediate_json_files = []
+    processes = []
+    q = multiprocessing.Queue()
     for chunk in chunks(coverage_files, chunk_size):
-        t = threading.Thread(target=gcovWorker, args=(cwd, gcov, intermediate_json_files, chunk, gcov_filter_options, branch_coverage))
-        threads.append(t)
-        t.start()
+        p = multiprocessing.Process(target=gcovWorker, args=(q, args, chunk, gcov_filter_options))
+        processes.append(p)
+        p.start()
 
-    logging.info("Spawned {} gcov threads, each processing at most {} coverage files".format(len(threads), chunk_size))
-    for t in threads:
-        t.join()
+    logging.info("Spawned {} gcov processes, each processing at most {} coverage files".format(len(processes), chunk_size))
 
-    return intermediate_json_files
+    fastcov_jsons = []
+    for p in processes:
+        fj = q.get()
+        fastcov_jsons.append(fj)
+
+    for p in processes:
+        p.join()
+
+    base_fastcov = fastcov_jsons.pop()
+    for fj in fastcov_jsons:
+        combineReports(base_fastcov, fj)
+
+    return base_fastcov
 
 def processGcov(cwd, gcov, files, gcov_filter_options):
     # Add absolute path
@@ -377,16 +393,6 @@ def distillSource(source_raw, sources, test_name, include_exceptional_branches):
     for line in source_raw["lines"]:
         distillLine(line, sources[source_name][test_name]["lines"], sources[source_name][test_name]["branches"], include_exceptional_branches)
 
-def distillReport(report_raw, args):
-    report_json = {
-        "sources": {}
-    }
-
-    for source in report_raw:
-        distillSource(source, report_json["sources"], args.test_name, args.xbranchcoverage)
-
-    return report_json
-
 def dumpToJson(intermediate, output):
     with open(output, "w") as f:
         json.dump(intermediate, f)
@@ -411,12 +417,16 @@ def addDicts(dict1, dict2):
 
 def addLists(list1, list2):
     """Add lists together by value. i.e. addLists([1,1], [2,2]) == [3,3]"""
-    if len(list1) == len(list2):
-        return [b1 + b2 for b1, b2 in zip(list1, list2)]
-    else:
-        # One report had different number branch measurements than the other, print a warning
-        logging.warning("Possible loss of correctness. Different number of branches for same line when combining reports ({} vs {})\n".format(list1, list2))
-        return list1 if len(list1) > len(list2) else list2
+    # Find big list and small list
+    blist, slist = list(list2), list(list1)
+    if len(list1) > len(list2):
+        blist, slist = slist, blist
+
+    # Overlay small list onto big list
+    for i, b in enumerate(slist):
+        blist[i] += b
+
+    return blist
 
 def combineReports(base, overlay):
     for source, scov in overlay["sources"].items():
@@ -645,16 +655,12 @@ def main():
 
     # Fire up one gcov per cpu and start processing gcdas
     gcov_filter_options = getGcovFilterOptions(args)
-    intermediate_json_files = processGcdas(args.cdirectory, args.gcov, args.jobs, coverage_files, gcov_filter_options, args.branchcoverage or args.xbranchcoverage, args.minimum_chunk)
+    fastcov_json = processGcdas(args, coverage_files, gcov_filter_options)
 
     # Summarize processing results
     gcov_total = sum(GCOVS_TOTAL)
     gcov_skipped = sum(GCOVS_SKIPPED)
     logging.info("Processed {} .gcov files ({} total, {} skipped)".format(gcov_total - gcov_skipped, gcov_total, gcov_skipped))
-
-    # Distill all the extraneous info gcov gives us down to the core report
-    fastcov_json = distillReport(intermediate_json_files, args)
-    logging.info("Aggregated raw gcov JSON into fastcov JSON report")
     logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
 
     # Scan for exclusion markers
