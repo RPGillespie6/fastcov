@@ -36,9 +36,9 @@ MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
 # Interesting metrics
-START_TIME = time.monotonic()
-GCOVS_TOTAL = []
-GCOVS_SKIPPED = []
+START_TIME    = time.monotonic()
+GCOVS_TOTAL   = 0
+GCOVS_SKIPPED = 0
 
 # Disable all logging in case developers are using this as a module
 logging.disable(level=logging.CRITICAL)
@@ -53,6 +53,12 @@ def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
         yield l[i:i + n]
+
+def incrementCounters(total, skipped):
+    global GCOVS_TOTAL
+    global GCOVS_SKIPPED
+    GCOVS_TOTAL   += total
+    GCOVS_SKIPPED += skipped
 
 def stopwatch():
     """Return number of seconds since last time this was called"""
@@ -100,10 +106,10 @@ def findCoverageFiles(cwd, coverage_files, use_gcno):
     logging.debug("Coverage files found:\n    %s", "\n    ".join(coverage_files))
     return coverage_files
 
-def gcovWorker(q, args, chunk, gcov_filter_options):
-    base_report = {
-        "sources": {}
-    }
+def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
+    base_report   = {"sources": {}}
+    gcovs_total   = 0
+    gcovs_skipped = 0
 
     gcov_args = "-it"
     if args.branchcoverage or args.xbranchcoverage:
@@ -115,19 +121,21 @@ def gcovWorker(q, args, chunk, gcov_filter_options):
         intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], gcov_filter_options)
         for f in intermediate_json_files:
             distillSource(f, base_report["sources"], args.test_name, args.xbranchcoverage)
-        GCOVS_TOTAL.append(len(intermediate_json["files"]))
-        GCOVS_SKIPPED.append(len(intermediate_json["files"])-len(intermediate_json_files))
+        gcovs_total   += len(intermediate_json["files"])
+        gcovs_skipped += len(intermediate_json["files"]) - len(intermediate_json_files)
 
     p.wait()
-    q.put(base_report)
+    data_q.put(base_report)
+    metrics_q.put((gcovs_total, gcovs_skipped))
 
 def processGcdas(args, coverage_files, gcov_filter_options):
     chunk_size = max(args.minimum_chunk, int(len(coverage_files) / args.jobs) + 1)
 
     processes = []
-    q = multiprocessing.Queue()
+    data_q    = multiprocessing.Queue()
+    metrics_q = multiprocessing.Queue()
     for chunk in chunks(coverage_files, chunk_size):
-        p = multiprocessing.Process(target=gcovWorker, args=(q, args, chunk, gcov_filter_options))
+        p = multiprocessing.Process(target=gcovWorker, args=(data_q, metrics_q, args, chunk, gcov_filter_options))
         processes.append(p)
         p.start()
 
@@ -135,8 +143,8 @@ def processGcdas(args, coverage_files, gcov_filter_options):
 
     fastcov_jsons = []
     for p in processes:
-        fj = q.get()
-        fastcov_jsons.append(fj)
+        fastcov_jsons.append(data_q.get())
+        incrementCounters(*metrics_q.get())
 
     for p in processes:
         p.join()
@@ -658,9 +666,7 @@ def main():
     fastcov_json = processGcdas(args, coverage_files, gcov_filter_options)
 
     # Summarize processing results
-    gcov_total = sum(GCOVS_TOTAL)
-    gcov_skipped = sum(GCOVS_SKIPPED)
-    logging.info("Processed {} .gcov files ({} total, {} skipped)".format(gcov_total - gcov_skipped, gcov_total, gcov_skipped))
+    logging.info("Processed {} .gcov files ({} total, {} skipped)".format(GCOVS_TOTAL - GCOVS_SKIPPED, GCOVS_TOTAL, GCOVS_SKIPPED))
     logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
 
     # Scan for exclusion markers
