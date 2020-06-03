@@ -155,38 +155,45 @@ def processGcdas(args, coverage_files, gcov_filter_options):
 
     return base_fastcov
 
-def processGcov(cwd, gcov, files, gcov_filter_options):
-    # Add absolute path
-    gcov["file_abs"] = os.path.abspath(os.path.join(cwd, gcov["file"]))
-
+def shouldFilterSource(source, gcov_filter_options):
+    """Returns true if the provided source file should be filtered due to CLI options, otherwise returns false"""
     # If explicit sources were passed, check for match
     if gcov_filter_options["sources"]:
-        if gcov["file_abs"] in gcov_filter_options["sources"]:
-            files.append(gcov)
-            logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
-        else:
-            logging.debug("Skipping coverage for '%s' due to option '--source-files'", gcov["file_abs"])
-        return
+        if source not in gcov_filter_options["sources"]:
+            logging.debug("Filtering coverage for '%s' due to option '--source-files'", source)
+            return True
 
     # Check exclude filter
     for ex in gcov_filter_options["exclude"]:
-        if ex in gcov["file_abs"]:
-            logging.debug("Skipping coverage for '%s' due to option '--exclude %s'", gcov["file_abs"], ex)
-            return
+        if ex in source:
+            logging.debug("Filtering coverage for '%s' due to option '--exclude %s'", source, ex)
+            return True
 
     # Check include filter
     if gcov_filter_options["include"]:
         included = False
-        for ex in gcov_filter_options["include"]:
-            if ex in gcov["file_abs"]:
+        for inc in gcov_filter_options["include"]:
+            if inc in source:
                 included = True
-                files.append(gcov)
-                logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
                 break
 
         if not included:
-            logging.debug("Skipping coverage for '%s' due to option '--include %s'", gcov["file_abs"], " ".join(gcov_filter_options["include"]))
+            logging.debug("Filtering coverage for '%s' due to option '--include %s'", source, " ".join(gcov_filter_options["include"]))
+            return True
 
+    return False
+
+def filterFastcov(fastcov_json, args):
+    gcov_filter_options = getGcovFilterOptions(args)
+    for source in list(fastcov_json["sources"].keys()):
+        if shouldFilterSource(source, gcov_filter_options):
+            del fastcov_json["sources"][source]
+
+def processGcov(cwd, gcov, files, gcov_filter_options):
+    # Add absolute path
+    gcov["file_abs"] = os.path.abspath(os.path.join(cwd, gcov["file"]))
+
+    if shouldFilterSource(gcov["file_abs"], gcov_filter_options):
         return
 
     files.append(gcov)
@@ -544,6 +551,7 @@ def parseAndCombine(paths):
 def combineCoverageFiles(args):
     logging.info("Performing combine operation")
     fastcov_json = parseAndCombine(args.combine)
+    filterFastcov(fastcov_json, args)
     dumpFile(fastcov_json, args)
 
 def dumpFile(fastcov_json, args):
