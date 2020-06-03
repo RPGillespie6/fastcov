@@ -36,6 +36,9 @@ test `find . -name *.gcda | wc -l` -eq 0
 ${TEST_DIR}/fastcov.py --gcov gcov-9 --zerocounters  # Clear previous test coverage
 ctest -R ctest_1
 
+# Create a fastcov JSON to be filtered later
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --verbose -o basic.fastcov.json
+
 # Test (basic report generation - no branches)
 coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --verbose --exclude cmake_project/test/ --lcov -o test1.actual.info
 cmp test1.actual.info ${TEST_DIR}/expected_results/test1.expected.info
@@ -79,6 +82,16 @@ if coverage run -a ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh ; then
     echo "Expected gcov version check to fail"
     exit 1
 fi
+
+# Combine operation - filtering
+coverage run -a ${TEST_DIR}/fastcov.py -C basic.fastcov.json --exclude cmake_project/test/ -o basic.fastcov.actual.json
+${TEST_DIR}/json_cmp.py basic.fastcov.actual.json ${TEST_DIR}/expected_results/basic.fastcov.expected.json
+
+coverage run -a ${TEST_DIR}/fastcov.py -C basic.fastcov.json --include cmake_project/src/ -o basic.fastcov2.actual.json
+${TEST_DIR}/json_cmp.py basic.fastcov2.actual.json ${TEST_DIR}/expected_results/basic.fastcov.expected.json
+
+coverage run -a ${TEST_DIR}/fastcov.py -C basic.fastcov.json --source-files /mnt/workspace/test/functional/cmake_project/src/source2.cpp /mnt/workspace/test/functional/cmake_project/src/source1.cpp -o basic.fastcov3.actual.json
+${TEST_DIR}/json_cmp.py basic.fastcov3.actual.json ${TEST_DIR}/expected_results/basic.fastcov.expected.json
 
 # Combine operation
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test2.expected.info ${TEST_DIR}/expected_results/test1.tn.expected.info --lcov -o combine1.actual.info
