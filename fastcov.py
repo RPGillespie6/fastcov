@@ -184,6 +184,7 @@ def shouldFilterSource(source, gcov_filter_options):
     return False
 
 def filterFastcov(fastcov_json, args):
+    logging.info("Performing filtering operations (if applicable)")
     gcov_filter_options = getGcovFilterOptions(args)
     for source in list(fastcov_json["sources"].keys()):
         if shouldFilterSource(source, gcov_filter_options):
@@ -548,11 +549,42 @@ def parseAndCombine(paths):
 
     return base_report
 
-def combineCoverageFiles(args):
+def getCombineCoverage(args):
     logging.info("Performing combine operation")
     fastcov_json = parseAndCombine(args.combine)
     filterFastcov(fastcov_json, args)
-    dumpFile(fastcov_json, args)
+    return fastcov_json
+
+def getGcovCoverage(args):
+    # Need at least python 3.5 because of use of recursive glob
+    checkPythonVersion(sys.version_info[0:2])
+
+    # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
+    checkGcovVersion(getGcovVersion(args.gcov))
+
+    # Get list of gcda files to process
+    coverage_files = findCoverageFiles(args.directory, args.coverage_files, args.use_gcno)
+
+    # If gcda/gcno filtering is enabled, filter them out now
+    if args.excludepre:
+        coverage_files = getFilteredCoverageFiles(coverage_files, args.excludepre)
+        logging.info("Found {} coverage files after filtering".format(len(coverage_files)))
+
+    # We "zero" the "counters" by simply deleting all gcda files
+    if args.zerocounters:
+        removeFiles(coverage_files)
+        logging.info("Removed {} .gcda files".format(len(coverage_files)))
+        sys.exit(0)
+
+    # Fire up one gcov per cpu and start processing gcdas
+    gcov_filter_options = getGcovFilterOptions(args)
+    fastcov_json = processGcdas(args, coverage_files, gcov_filter_options)
+
+    # Summarize processing results
+    logging.info("Processed {} .gcov files ({} total, {} skipped)".format(GCOVS_TOTAL - GCOVS_SKIPPED, GCOVS_TOTAL, GCOVS_SKIPPED))
+    logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
+
+    return fastcov_json
 
 def dumpFile(fastcov_json, args):
     if args.lcov:
@@ -575,6 +607,7 @@ def parseArgs():
     parser.add_argument('-A', '--exclude-br-lines-starting-with', dest='exclude_branches_sw', nargs="+", metavar='', default=[], help='Exclude branches from lines starting with one of the provided strings (i.e. assert, return, etc.)')
     parser.add_argument('-a', '--include-br-lines-starting-with', dest='include_branches_sw', nargs="+", metavar='', default=[], help='Include only branches from lines starting with one of the provided strings (i.e. if, else, while, etc.)')
     parser.add_argument('-X', '--skip-exclusion-markers', dest='skip_exclusion_markers', action="store_true", help='Skip reading source files to search for lcov exclusion markers (such as "LCOV_EXCL_LINE")')
+    parser.add_argument('-x', '--scan-exclusion-markers', dest='scan_exclusion_markers', action="store_true", help='(Combine operations) Force reading source files to search for lcov exclusion markers (such as "LCOV_EXCL_LINE")')
 
     # Capture untested file coverage as well via gcno
     parser.add_argument('-n', '--process-gcno', dest='use_gcno', action="store_true", help='Process both gcno and gcda coverage files. This option is useful for capturing untested files in the coverage report.')
@@ -644,41 +677,16 @@ def main():
     # Setup logging
     setupLogging(args.quiet, args.verbose)
 
-    # Need at least python 3.5 because of use of recursive glob
-    checkPythonVersion(sys.version_info[0:2])
-
-    # Combine operation?
+    # Get report from appropriate source
     if args.combine:
-        combineCoverageFiles(args)
-        return
-
-    # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
-    checkGcovVersion(getGcovVersion(args.gcov))
-
-    # Get list of gcda files to process
-    coverage_files = findCoverageFiles(args.directory, args.coverage_files, args.use_gcno)
-
-    # If gcda/gcno filtering is enabled, filter them out now
-    if args.excludepre:
-        coverage_files = getFilteredCoverageFiles(coverage_files, args.excludepre)
-        logging.info("Found {} coverage files after filtering".format(len(coverage_files)))
-
-    # We "zero" the "counters" by simply deleting all gcda files
-    if args.zerocounters:
-        removeFiles(coverage_files)
-        logging.info("Removed {} .gcda files".format(len(coverage_files)))
-        return
-
-    # Fire up one gcov per cpu and start processing gcdas
-    gcov_filter_options = getGcovFilterOptions(args)
-    fastcov_json = processGcdas(args, coverage_files, gcov_filter_options)
-
-    # Summarize processing results
-    logging.info("Processed {} .gcov files ({} total, {} skipped)".format(GCOVS_TOTAL - GCOVS_SKIPPED, GCOVS_TOTAL, GCOVS_SKIPPED))
-    logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
+        fastcov_json = getCombineCoverage(args)
+        skip_exclusion_markers = not args.scan_exclusion_markers
+    else:
+        fastcov_json = getGcovCoverage(args)
+        skip_exclusion_markers = args.skip_exclusion_markers
 
     # Scan for exclusion markers
-    if not args.skip_exclusion_markers:
+    if not skip_exclusion_markers:
         scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
