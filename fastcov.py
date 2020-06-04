@@ -548,12 +548,6 @@ def parseAndCombine(paths):
 
     return base_report
 
-def combineCoverageFiles(args):
-    logging.info("Performing combine operation")
-    fastcov_json = parseAndCombine(args.combine)
-    filterFastcov(fastcov_json, args)
-    dumpFile(fastcov_json, args)
-
 def dumpFile(fastcov_json, args):
     if args.lcov:
         dumpToLcovInfo(fastcov_json, args.output)
@@ -561,6 +555,37 @@ def dumpFile(fastcov_json, args):
     else:
         dumpToJson(fastcov_json, args.output)
         logging.info("Created fastcov json file '{}'".format(args.output))
+
+def combineCoverageFiles(args):
+    logging.info("Performing combine operation")
+    fastcov_json = parseAndCombine(args.combine)
+    return fastcov_json
+
+def importCoverageFiles(args):
+    # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
+    checkGcovVersion(getGcovVersion(args.gcov))
+
+    # Get list of gcda files to process
+    coverage_files = findCoverageFiles(args.directory, args.coverage_files, args.use_gcno)
+
+    # If gcda/gcno filtering is enabled, filter them out now
+    if args.excludepre:
+        coverage_files = getFilteredCoverageFiles(coverage_files, args.excludepre)
+        logging.info("Found {} coverage files after filtering".format(len(coverage_files)))
+
+    # We "zero" the "counters" by simply deleting all gcda files
+    if args.zerocounters:
+        removeFiles(coverage_files)
+        logging.info("Removed {} .gcda files".format(len(coverage_files)))
+        return
+
+    # Fire up one gcov per cpu and start processing gcdas
+    gcov_filter_options = getGcovFilterOptions(args)
+    fastcov_json = processGcdas(args, coverage_files, gcov_filter_options)
+
+    # Summarize processing results
+    logging.info("Processed {} .gcov files ({} total, {} skipped)".format(GCOVS_TOTAL - GCOVS_SKIPPED, GCOVS_TOTAL, GCOVS_SKIPPED))
+    return fastcov_json
 
 def tupleToDotted(tup):
     return ".".join(map(str, tup))
@@ -647,34 +672,13 @@ def main():
     # Need at least python 3.5 because of use of recursive glob
     checkPythonVersion(sys.version_info[0:2])
 
-    # Combine operation?
+    # Combine or import operation?
     if args.combine:
-        combineCoverageFiles(args)
-        return
+        fastcov_json = combineCoverageFiles(args)
+    else:
+        fastcov_json = importCoverageFiles(args)
 
-    # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
-    checkGcovVersion(getGcovVersion(args.gcov))
-
-    # Get list of gcda files to process
-    coverage_files = findCoverageFiles(args.directory, args.coverage_files, args.use_gcno)
-
-    # If gcda/gcno filtering is enabled, filter them out now
-    if args.excludepre:
-        coverage_files = getFilteredCoverageFiles(coverage_files, args.excludepre)
-        logging.info("Found {} coverage files after filtering".format(len(coverage_files)))
-
-    # We "zero" the "counters" by simply deleting all gcda files
-    if args.zerocounters:
-        removeFiles(coverage_files)
-        logging.info("Removed {} .gcda files".format(len(coverage_files)))
-        return
-
-    # Fire up one gcov per cpu and start processing gcdas
-    gcov_filter_options = getGcovFilterOptions(args)
-    fastcov_json = processGcdas(args, coverage_files, gcov_filter_options)
-
-    # Summarize processing results
-    logging.info("Processed {} .gcov files ({} total, {} skipped)".format(GCOVS_TOTAL - GCOVS_SKIPPED, GCOVS_TOTAL, GCOVS_SKIPPED))
+    # Summarize fastcov
     logging.debug("Final report will contain coverage for the following %d source files:\n    %s", len(fastcov_json["sources"]), "\n    ".join(fastcov_json["sources"]))
 
     # Scan for exclusion markers
