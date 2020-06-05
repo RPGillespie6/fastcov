@@ -95,6 +95,22 @@ $ fastcov.py --branch-coverage --exclude-br-lines-starting-with assert ASSERT # 
 
 It's possible to include *both* `--include-br-lines-starting-with` and `--exclude-br-lines-starting-with`. In this case, the branch will be removed if either the line does not start with one of `--include-br-lines-starting-with` or the line does start with one of `--exclude-br-lines-starting-with`. This could be used, for example, to include branches starting with `else` but not with `else if` by passing `--include-br-lines-starting-with else --exclude-br-lines-starting-with "else if"`.
 
+## Combine Operations
+
+Fastcov can combine arbitrary `.info` and `.json` reports into a single report by setting the combine flag `-C`. Furthermore, the same pipeline that is run during non-combine operations can optionally be applied to the combined report (filtering, exclusion scanning, select output format).
+
+Combine operations are not subject to the gcov and python minimum version requirements.
+
+A few example snippets:
+```bash
+# Basic combine operation combining 3 reports into 1
+$ fastcov.py -C report1.info report2.info report3.json --lcov -o report_final.info
+# Read in report1.info, remove all coverage for files containing "/usr/include" and write out the result
+$ fastcov.py -C report1.info --exclude /usr/include --lcov -o report1_filtered.info
+# Combine 2 reports, (re-)scanning all of the source files contained in the final report for exclusion markers
+$ fastcov.py -C report1.json report2.json --scan-exclusion-markers -o report3.json
+```
+
 ## Benchmarks
 
 Anecdotal testing on my own projects indicate that fastcov is over 100x faster than lcov and over 30x faster than gcovr:
