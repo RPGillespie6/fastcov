@@ -61,7 +61,7 @@ def incrementCounters(total, skipped):
     GCOVS_SKIPPED += skipped
 
 def stopwatch():
-    """Return number of seconds since last time this was called"""
+    """Return number of seconds since last time this was called."""
     global START_TIME
     end_time   = time.monotonic()
     delta      = end_time - START_TIME
@@ -69,7 +69,7 @@ def stopwatch():
     return delta
 
 def parseVersionFromLine(version_str):
-    """Given a string containing a dotted integer version, parse out integers and return as tuple"""
+    """Given a string containing a dotted integer version, parse out integers and return as tuple."""
     version = re.search(r'(\d+\.\d+\.\d+)', version_str)
 
     if not version:
@@ -156,7 +156,7 @@ def processGcdas(args, coverage_files, gcov_filter_options):
     return base_fastcov
 
 def shouldFilterSource(source, gcov_filter_options):
-    """Returns true if the provided source file should be filtered due to CLI options, otherwise returns false"""
+    """Returns true if the provided source file should be filtered due to CLI options, otherwise returns false."""
     # If explicit sources were passed, check for match
     if gcov_filter_options["sources"]:
         if source not in gcov_filter_options["sources"]:
@@ -260,7 +260,7 @@ def dumpToLcovInfo(fastcov_json, output):
                 f.write("end_of_record\n")
 
 def getSourceLines(source, fallback_encodings=[]):
-    """Return a list of lines from the provided source, trying to decode with fallback encodings if the default fails"""
+    """Return a list of lines from the provided source, trying to decode with fallback encodings if the default fails."""
     default_encoding = sys.getdefaultencoding()
     for encoding in [default_encoding] + fallback_encodings:
         try:
@@ -439,7 +439,7 @@ def getGcovFilterOptions(args):
     }
 
 def addDicts(dict1, dict2):
-    """Add dicts together by value. i.e. addDicts({"a":1,"b":0}, {"a":2}) == {"a":3,"b":0}"""
+    """Add dicts together by value. i.e. addDicts({"a":1,"b":0}, {"a":2}) == {"a":3,"b":0}."""
     result = {k:v for k,v in dict1.items()}
     for k,v in dict2.items():
         if k in result:
@@ -450,7 +450,7 @@ def addDicts(dict1, dict2):
     return result
 
 def addLists(list1, list2):
-    """Add lists together by value. i.e. addLists([1,1], [2,2]) == [3,3]"""
+    """Add lists together by value. i.e. addLists([1,1], [2,2]) == [3,3]."""
     # Find big list and small list
     blist, slist = list(list2), list(list1)
     if len(list1) > len(list2):
@@ -496,7 +496,7 @@ def combineReports(base, overlay):
                     base_data["functions"][function]["execution_count"] += cov["execution_count"]
 
 def parseInfo(path):
-    """Parse an lcov .info file into fastcov json"""
+    """Parse an lcov .info file into fastcov json."""
     fastcov_json = {
         "sources": {}
     }
@@ -664,13 +664,13 @@ def parseArgs():
     return args
 
 def checkPythonVersion(version):
-    """Exit if the provided python version is less than the supported version"""
+    """Exit if the provided python version is less than the supported version."""
     if version < MINIMUM_PYTHON:
         sys.stderr.write("Minimum python version {} required, found {}\n".format(tupleToDotted(MINIMUM_PYTHON), tupleToDotted(version)))
         sys.exit(1)
 
 def checkGcovVersion(version):
-    """Exit if the provided gcov version is less than the supported version"""
+    """Exit if the provided gcov version is less than the supported version."""
     if version < MINIMUM_GCOV:
         sys.stderr.write("Minimum gcov version {} required, found {}\n".format(tupleToDotted(MINIMUM_GCOV), tupleToDotted(version)))
         sys.exit(2)
