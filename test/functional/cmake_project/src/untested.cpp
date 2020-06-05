@@ -12,3 +12,9 @@ int untestedFoo(int y)
 
     return x;
 }
+
+void untestedExcluded() {}  // LCOV_EXCL_LINE
+
+// LCOV_EXCL_START
+void untestedRangeExcluded() {}
+// LCOV_EXCL_STOP
