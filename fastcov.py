@@ -283,6 +283,14 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
             for test_name in fastcov_sources[source]:
                 fastcov_data = fastcov_sources[source][test_name]
 
+                # Build line to function dict so can quickly delete by line number
+                line_to_func = {}
+                for f in fastcov_data["functions"].keys():
+                    l = fastcov_data["functions"][f]["start_line"]
+                    if l not in line_to_func:
+                        line_to_func[l] = set()
+                    line_to_func[l].add(f)
+
                 if i in fastcov_data["branches"]:
                     del_exclude_br = exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw)
                     del_include_br = include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw)
@@ -296,6 +304,10 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
                     for key in ["lines", "branches"]:
                         if i in fastcov_data[key]:
                             del fastcov_data[key][i]
+                    if i in line_to_func:
+                        for key in line_to_func[i]:
+                            if key in fastcov_data["functions"]:
+                                del fastcov_data["functions"][key]
                 elif "LCOV_EXCL_START" in line:
                     start_line = i
                 elif "LCOV_EXCL_STOP" in line:
@@ -309,6 +321,12 @@ def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branch
                         for line_num in list(fastcov_data[key].keys()):
                             if start_line <= line_num <= end_line:
                                 del fastcov_data[key][line_num]
+
+                    for line_num in range(start_line, end_line):
+                        if line_num in line_to_func:
+                            for key in line_to_func[line_num]:
+                                if key in fastcov_data["functions"]:
+                                    del fastcov_data["functions"][key]
 
                     start_line = end_line = 0
                 elif "LCOV_EXCL_BR_LINE" in line:
