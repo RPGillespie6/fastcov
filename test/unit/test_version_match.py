@@ -27,17 +27,17 @@ def test_python_version_match():
     with pytest.raises(SystemExit) as e:
         fastcov.checkPythonVersion((2,7))
         assert e.type == SystemExit
-        assert e.value.code == 1
+        assert e.value.code == 3
 
 def test_gcov_version_match():
     fastcov.checkGcovVersion(fastcov.MINIMUM_GCOV)
     with pytest.raises(SystemExit) as e:
         fastcov.checkGcovVersion((8,1,0))
         assert e.type == SystemExit
-        assert e.value.code == 2
+        assert e.value.code == 4
 
 def test_bad_combine_extension():
     with pytest.raises(SystemExit) as e:
         fastcov.parseAndCombine(["badfile.bad"])
         assert e.type == SystemExit
-        assert e.value.code == 3
+        assert e.value.code == 5

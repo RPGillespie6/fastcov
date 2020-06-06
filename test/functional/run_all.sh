@@ -160,6 +160,11 @@ ctest # Run all
 coverage run -a ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files ../src/source1.cpp --lcov -o multitest.actual.info
 cmp multitest.actual.info ${TEST_DIR}/expected_results/multitest.expected.info
 
+# Test missing source files during exclusion scan results in non-zero error code
+rc=0
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --scan-exclusion-markers -o missing.json || rc=$?
+test $rc -eq 6
+
 # Write out coverage as xml
 coverage combine
 coverage xml -o coverage.xml
