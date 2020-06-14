@@ -18,7 +18,7 @@
         $ ./fastcov.py --exclude /usr/include test/ --lcov -o report.info
         $ genhtml -o code_coverage report.info
 """
-
+import fnmatch
 import re
 import os
 import sys
@@ -133,7 +133,7 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
     p = subprocess.Popen([args.gcov, gcov_args] + chunk, cwd=args.cdirectory, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     for line in iter(p.stdout.readline, b''):
         intermediate_json = json.loads(line.decode(sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'))
-        intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], gcov_filter_options)
+        intermediate_json_files = processGcovs(intermediate_json["files"], intermediate_json["current_working_directory"], gcov_filter_options)
         for f in intermediate_json_files:
             distillSource(f, base_report["sources"], args.test_name, args.xbranchcoverage)
         gcovs_total   += len(intermediate_json["files"])
@@ -184,6 +184,12 @@ def shouldFilterSource(source, gcov_filter_options):
             logging.debug("Filtering coverage for '%s' due to option '--exclude %s'", source, ex)
             return True
 
+    # Check exclude filter
+    for ex_glob in gcov_filter_options["exclude_glob"]:
+        if fnmatch.fnmatch(source, ex_glob):
+            logging.debug("Filtering coverage for '%s' due to option '--exclude_glob %s'", source, ex_glob)
+            return True
+
     # Check include filter
     if gcov_filter_options["include"]:
         included = False
@@ -205,9 +211,9 @@ def filterFastcov(fastcov_json, args):
         if shouldFilterSource(source, gcov_filter_options):
             del fastcov_json["sources"][source]
 
-def processGcov(cwd, gcov, files, gcov_filter_options):
+def processGcov(gcov, source_base_dir, files, gcov_filter_options):
     # Add absolute path
-    gcov["file_abs"] = os.path.abspath(os.path.join(cwd, gcov["file"]))
+    gcov["file_abs"] = os.path.abspath(os.path.join(source_base_dir, gcov["file"]))
 
     if shouldFilterSource(gcov["file_abs"], gcov_filter_options):
         return
@@ -215,10 +221,10 @@ def processGcov(cwd, gcov, files, gcov_filter_options):
     files.append(gcov)
     logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
 
-def processGcovs(cwd, gcov_files, gcov_filter_options):
+def processGcovs(gcov_files, source_base_dir, gcov_filter_options):
     files = []
     for gcov in gcov_files:
-        processGcov(cwd, gcov, files, gcov_filter_options)
+        processGcov(gcov, source_base_dir, files, gcov_filter_options)
     return files
 
 def dumpBranchCoverageToLcovInfo(f, branches):
@@ -368,6 +374,12 @@ def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branch
     for t in threads:
         t.join()
 
+def validateSources(fastcov_json):
+    logging.info("Checking if all sources exist")
+    for source in fastcov_json["sources"].keys():
+        if not os.path.exists(source):
+            logging.error("Cannot found '{}'".format(source))
+
 def distillFunction(function_raw, functions):
     function_name   = function_raw["name"]
     # NOTE: need to explicitly cast all counts coming from gcov to int - this is because gcov's json library
@@ -458,6 +470,7 @@ def getGcovFilterOptions(args):
         "sources": set([os.path.abspath(s) for s in args.sources]), #Make paths absolute, use set for fast lookups
         "include": args.includepost,
         "exclude": args.excludepost,
+        "exclude_glob":args.excludepost_glob
     }
 
 def addDicts(dict1, dict2):
@@ -626,6 +639,19 @@ def getGcovCoverage(args):
 
     return fastcov_json
 
+def dumpStatistic(fastcov_json):
+    totalLines = 0
+    coveredLines = 0
+    for source in fastcov_json["sources"].keys():
+        for test_name in fastcov_json["sources"][source].keys():
+            report_data = fastcov_json["sources"][source][test_name]
+            totalLines += len(report_data["lines"])
+            for executionCount in report_data["lines"].values():
+                coveredLines += 1 if executionCount > 0 else 0
+    coverage = (coveredLines * 1000) / totalLines if totalLines > 0 else 1000
+    coverage = coverage / 10.0
+    logging.info("Lines Coverage: {}, {}/{}".format(coverage, coveredLines, totalLines))
+
 def dumpFile(fastcov_json, args):
     if args.lcov:
         dumpToLcovInfo(fastcov_json, args.output)
@@ -633,6 +659,9 @@ def dumpFile(fastcov_json, args):
     else:
         dumpToJson(fastcov_json, args.output)
         logging.info("Created fastcov json file '{}'".format(args.output))
+
+    if args.dump_statistic:
+        dumpStatistic(fastcov_json)
 
 def tupleToDotted(tup):
     return ".".join(map(str, tup))
@@ -655,6 +684,7 @@ def parseArgs():
     # Filtering Options
     parser.add_argument('-s', '--source-files', dest='sources',     nargs="+", metavar='', default=[], help='Filter: Specify exactly which source files should be included in the final report. Paths must be either absolute or relative to current directory.')
     parser.add_argument('-e', '--exclude',      dest='excludepost', nargs="+", metavar='', default=[], help='Filter: Exclude source files from final report if they contain one of the provided substrings (i.e. /usr/include test/, etc.)')
+    parser.add_argument('-eg', '--exclude-glob', dest='excludepost_glob', nargs="+", metavar='', default=[], help='Filter: Exclude source files by glob pattern from final report if they contain one of the provided substrings (i.e. /usr/include test/, etc.)')
     parser.add_argument('-i', '--include',      dest='includepost', nargs="+", metavar='', default=[], help='Filter: Only include source files in final report that contain one of the provided substrings (i.e. src/ etc.)')
     parser.add_argument('-f', '--gcda-files',   dest='coverage_files',  nargs="+", metavar='', default=[], help='Filter: Specify exactly which gcda or gcno files should be processed. Note that specifying gcno causes both gcno and gcda to be processed.')
     parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", metavar='', default=[], help='Filter: Exclude gcda or gcno files from being processed via simple find matching (not regex)')
@@ -662,9 +692,6 @@ def parseArgs():
     parser.add_argument('-g', '--gcov', dest='gcov', default='gcov', help='Which gcov binary to use')
 
     parser.add_argument('-d', '--search-directory', dest='directory', default=".", help='Base directory to recursively search for gcda files (default: .)')
-    parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default=".", help='Base directory compiler was invoked from (default: .) \
-                                                                                            This needs to be set if invoking fastcov from somewhere other than the base compiler directory.')
-
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: {}).'.format(multiprocessing.cpu_count()))
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5,    help='Minimum number of files a thread should process (default: 5). \
                                                                                                           If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherwise fastcov will spawn only 1 thread to process all of them.')
@@ -679,6 +706,8 @@ def parseArgs():
     parser.add_argument('-C', '--add-tracefile', dest='combine',   nargs="+",  help='Combine multiple coverage files into one. If this flag is specified, fastcov will do a combine operation instead invoking gcov. Equivalent to lcov\'s `-a`.')
 
     parser.add_argument('-V', '--verbose', dest="verbose", action="store_true", help="Print more detailed information about what fastcov is doing")
+    parser.add_argument('-w', '--validate-sources', dest="validate_sources", action="store_true", help="Check if every source file exists")
+    parser.add_argument('-p', '--dump-statistic', dest="dump_statistic", action="store_true", help="Dump total statistic at the end")
     parser.add_argument('-v', '--version', action="version", version='%(prog)s {version}'.format(version=__version__), help="Show program's version number and exit")
 
     args = parser.parse_args()
@@ -730,6 +759,9 @@ def main():
         scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
+    if args.validate_sources:
+        validateSources(fastcov_json)
+
     # Dump to desired file format
     dumpFile(fastcov_json, args)
 
@@ -742,3 +774,4 @@ __version__ = tupleToDotted(FASTCOV_VERSION)
 
 if __name__ == '__main__':
     main()
+	
