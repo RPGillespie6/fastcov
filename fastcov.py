@@ -132,7 +132,7 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
 
     p = subprocess.Popen([args.gcov, gcov_args] + chunk, cwd=args.cdirectory, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     for line in iter(p.stdout.readline, b''):
-        intermediate_json = json.loads(line.decode(sys.stdout.encoding))
+        intermediate_json = json.loads(line.decode(sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'))
         intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], gcov_filter_options)
         for f in intermediate_json_files:
             distillSource(f, base_report["sources"], args.test_name, args.xbranchcoverage)
