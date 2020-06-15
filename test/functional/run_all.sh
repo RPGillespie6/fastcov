@@ -165,6 +165,21 @@ rc=0
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --scan-exclusion-markers -o missing.json || rc=$?
 test $rc -eq 6
 
+# Test (running data from other than build directory)
+RUN_DIR=${PWD}
+pushd ${TEST_DIR}
+COVERAGE_FILE=${RUN_DIR}/.coverage.other_dir coverage run -a ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files cmake_project/src/source1.cpp --lcov -o ${RUN_DIR}/multitest_nonbuild_dir.actual.info
+cmp ${RUN_DIR}/multitest_nonbuild_dir.actual.info ${TEST_DIR}/expected_results/multitest.expected.info
+popd
+
+# Test (error messages for missing sources)
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --validate-sources -o missing.json | grep 'Cannot found' | grep "error" | wc -l > missing_files_count.log
+mfc=$(cat missing_files_count.log)
+test "$mfc" -eq "2"
+
+# Test (output redirect return no error)
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9  --lcov -o redirected.output.info > redirected.output.info.log 2>redirected.output.info.log
+
 # Write out coverage as xml
 coverage combine
 coverage xml -o coverage.xml
