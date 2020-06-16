@@ -130,10 +130,11 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
     if args.branchcoverage or args.xbranchcoverage:
         gcov_args += "b"
 
-    p = subprocess.Popen([args.gcov, gcov_args] + chunk, cwd=args.cdirectory, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    workdir = args.cdirectory if args.cdirectory else "."
+    p = subprocess.Popen([args.gcov, gcov_args] + chunk, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     for line in iter(p.stdout.readline, b''):
         intermediate_json = json.loads(line.decode(sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'))
-        intermediate_json_files = processGcovs(intermediate_json["files"], intermediate_json["current_working_directory"], gcov_filter_options)
+        intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], intermediate_json["current_working_directory"], gcov_filter_options)
         for f in intermediate_json_files:
             distillSource(f, base_report["sources"], args.test_name, args.xbranchcoverage)
         gcovs_total   += len(intermediate_json["files"])
@@ -211,9 +212,12 @@ def filterFastcov(fastcov_json, args):
         if shouldFilterSource(source, gcov_filter_options):
             del fastcov_json["sources"][source]
 
-def processGcov(gcov, source_base_dir, files, gcov_filter_options):
+def processGcov(cwd, gcov, source_base_dir, files, gcov_filter_options):
+    # Uses cwd if set, else source_base_dir from gcov json. If both are empty, uses "."
+    base_dir = cwd if cwd else source_base_dir
+    base_dir = base_dir if base_dir else "."
     # Add absolute path
-    gcov["file_abs"] = os.path.abspath(os.path.join(source_base_dir, gcov["file"]))
+    gcov["file_abs"] = os.path.abspath(os.path.join(base_dir, gcov["file"]))
 
     if shouldFilterSource(gcov["file_abs"], gcov_filter_options):
         return
@@ -221,10 +225,10 @@ def processGcov(gcov, source_base_dir, files, gcov_filter_options):
     files.append(gcov)
     logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
 
-def processGcovs(gcov_files, source_base_dir, gcov_filter_options):
+def processGcovs(cwd, gcov_files, source_base_dir, gcov_filter_options):
     files = []
     for gcov in gcov_files:
-        processGcov(gcov, source_base_dir, files, gcov_filter_options)
+        processGcov(cwd, gcov, source_base_dir, files, gcov_filter_options)
     return files
 
 def dumpBranchCoverageToLcovInfo(f, branches):
@@ -378,7 +382,7 @@ def validateSources(fastcov_json):
     logging.info("Checking if all sources exist")
     for source in fastcov_json["sources"].keys():
         if not os.path.exists(source):
-            logging.error("Cannot found '{}'".format(source))
+            logging.error("Cannot find '{}'".format(source))
 
 def distillFunction(function_raw, functions):
     function_name   = function_raw["name"]
@@ -639,18 +643,36 @@ def getGcovCoverage(args):
 
     return fastcov_json
 
+def formatCoveredItems(covered, total):
+    coverage = (covered * 100.0) / total if total > 0 else 100.0
+    coverage = round(coverage, 2)
+    return "{:.2f}, {}/{}".format(coverage, covered, total)
+
 def dumpStatistic(fastcov_json):
-    totalLines = 0
-    coveredLines = 0
-    for source in fastcov_json["sources"].keys():
-        for test_name in fastcov_json["sources"][source].keys():
-            report_data = fastcov_json["sources"][source][test_name]
-            totalLines += len(report_data["lines"])
-            for executionCount in report_data["lines"].values():
-                coveredLines += 1 if executionCount > 0 else 0
-    coverage = (coveredLines * 1000) / totalLines if totalLines > 0 else 1000
-    coverage = coverage / 10.0
-    logging.info("Lines Coverage: {}, {}/{}".format(coverage, coveredLines, totalLines))
+    total_lines = 0
+    covered_lines = 0
+    total_functions = 0
+    covered_functions = 0
+    total_files = len(fastcov_json["sources"])
+    covered_files = 0
+
+    for source_name, source in fastcov_json["sources"].items():
+        is_file_covered = False
+        for test_name, test in source.items():
+            total_lines += len(test["lines"])
+            for execution_count in test["lines"].values():
+                covered_lines += 1 if execution_count > 0 else 0
+                is_file_covered = is_file_covered or execution_count > 0
+            total_functions += len(test["functions"])
+            for function in test["functions"].values():
+                covered_functions += 1 if function['execution_count'] > 0 else 0
+                is_file_covered = is_file_covered or function['execution_count'] > 0
+        if is_file_covered:
+            covered_files = covered_files + 1
+
+    logging.info("Files Coverage: {}".format(formatCoveredItems(covered_files, total_files)))
+    logging.info("Functions Coverage: {}".format(formatCoveredItems(covered_functions, total_functions)))
+    logging.info("Lines Coverage: {}".format(formatCoveredItems(covered_lines, total_lines)))
 
 def dumpFile(fastcov_json, args):
     if args.lcov:
@@ -692,9 +714,8 @@ def parseArgs():
     parser.add_argument('-g', '--gcov', dest='gcov', default='gcov', help='Which gcov binary to use')
 
     parser.add_argument('-d', '--search-directory', dest='directory', default=".", help='Base directory to recursively search for gcda files (default: .)')
-    #TODO: Unused parameter. Need to delete it, but probably fix all tests
-    parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default=".", help='Base directory compiler was invoked from (default: .) \
-                                                                                            This needs to be set if invoking fastcov from somewhere other than the base compiler directory.')
+    parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default="", help='Base directory compiler was invoked from (default: . or read from gcov) \
+                                                                                            This needs to be set if invoking fastcov from somewhere other than the base compiler directory. No need to set it if gcc version > 9.1')
 
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: {}).'.format(multiprocessing.cpu_count()))
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5,    help='Minimum number of files a thread should process (default: 5). \
@@ -703,7 +724,7 @@ def parseArgs():
     parser.add_argument('-F', '--fallback-encodings', dest='fallback_encodings', nargs="+", metavar='', default=[], help='List of encodings to try if opening a source file with the default fails (i.e. latin1, etc.). This option is not usually needed.')
 
     parser.add_argument('-l', '--lcov',   dest='lcov',   action="store_true",     help='Output in lcov info format instead of fastcov json')
-    parser.add_argument('-o', '--output', dest='output', default="coverage.json", help='Name of output file (default: coverage.json)')
+    parser.add_argument('-o', '--output', dest='output', default="", help='Name of output file (default: coverage.json or coverage.info, depends on --lcov option)')
     parser.add_argument('-q', '--quiet',  dest='quiet',  action="store_true",     help='Suppress output to stdout')
 
     parser.add_argument('-t', '--test-name',     dest='test_name', default="", help='Specify a test name for the coverage. Equivalent to lcov\'s `-t`.')
@@ -715,7 +736,8 @@ def parseArgs():
     parser.add_argument('-v', '--version', action="version", version='%(prog)s {version}'.format(version=__version__), help="Show program's version number and exit")
 
     args = parser.parse_args()
-
+    if not args.output:
+        args.output = 'coverage.info' if args.lcov else 'coverage.json'
     return args
 
 def checkPythonVersion(version):
@@ -778,4 +800,3 @@ __version__ = tupleToDotted(FASTCOV_VERSION)
 
 if __name__ == '__main__':
     main()
-	

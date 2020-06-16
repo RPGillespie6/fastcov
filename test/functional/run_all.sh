@@ -173,12 +173,20 @@ cmp ${RUN_DIR}/multitest_nonbuild_dir.actual.info ${TEST_DIR}/expected_results/m
 popd
 
 # Test (error messages for missing sources)
-coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --validate-sources -o missing.json 2>&1 | grep 'Cannot found' | grep "error" | wc -l > missing_files_count.log
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --validate-sources -o missing.json 2>&1 | grep 'Cannot find' | grep "error" | wc -l > missing_files_count.log
 mfc=$(cat missing_files_count.log)
 test "$mfc" -eq "2"
 
 # Test (output redirect return no error)
 coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9  --lcov -o redirected.output.info > redirected.output.info.log 2>redirected.output.info.log
+
+# Test (default name for json)
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 -p
+test -f "coverage.json"
+
+# Test (default name for lcov)
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --lcov -p
+test -f "coverage.info"
 
 # Write out coverage as xml
 coverage combine
