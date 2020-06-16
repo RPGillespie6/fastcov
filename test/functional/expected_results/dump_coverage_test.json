@@ -1,0 +1,66 @@
+{
+    "sources": {
+        "/test/source3.cpp": {
+            "": {
+                "functions": {
+                    "_Z3barbii": {
+                        "start_line": 3,
+                        "execution_count": 0
+                    }
+                },
+                "branches": {},
+                "lines": {
+                    "3": 0,
+                    "5": 0,
+                    "6": 0,
+                    "8": 0
+                }
+            }
+        },
+        "/test/source2.cpp": {
+            "": {
+                "functions": {
+                    "_Z3barbii": {
+                        "start_line": 3,
+                        "execution_count": 10
+                    },
+                    "_Z3barbii2": {
+                          "start_line": 3,
+                          "execution_count": 0
+                    }
+                },
+                "branches": {},
+                "lines": {
+                    "3": 10,
+                    "5": 10,
+                    "6": 10,
+                    "8": 0
+                }
+            }
+        },
+        "/test/source1.cpp": {
+            "": {
+                "functions": {
+                    "_Z3foob": {
+                        "start_line": 3,
+                        "execution_count": 1
+                    },
+                    "_Z3foob2": {
+                        "start_line": 3,
+                        "execution_count": 5
+                    }
+                },
+                "branches": {},
+                "lines": {
+                    "3": 1,
+                    "5": 1,
+                    "7": 1001,
+                    "8": 1000,
+                    "10": 1000,
+                    "11": 0,
+                    "14": 1
+                }
+            }
+        }
+    }
+}
