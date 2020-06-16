@@ -193,7 +193,7 @@ coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/exclude_g
 cmp exclude_glob_test.actual.info ${TEST_DIR}/expected_results/exclude_glob_test.expected.info
 
 # Test (print coverage info)
-coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/exclude_glob_test.info --lcov -o print_coverage.info -p 2>print_coverage.info.log
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/dump_coverage_test.json --lcov -o print_coverage.json -p 2>print_coverage.info.log
 cat print_coverage.info.log | grep 'Files Coverage'
 cat print_coverage.info.log | grep 'Functions Coverage'
 cat print_coverage.info.log | grep 'Lines Coverage'
