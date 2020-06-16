@@ -168,7 +168,7 @@ test $rc -eq 6
 # Test (running data from other than build directory)
 RUN_DIR=${PWD}
 pushd ${TEST_DIR}
-COVERAGE_FILE=${RUN_DIR}/.coverage.other_dir coverage run -a ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files cmake_project/src/source1.cpp --lcov -p -o ${RUN_DIR}/multitest_nonbuild_dir.actual.info
+COVERAGE_FILE=${RUN_DIR}/.coverage.other_dir coverage run -a ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --source-files cmake_project/src/source1.cpp --lcov -o ${RUN_DIR}/multitest_nonbuild_dir.actual.info
 cmp ${RUN_DIR}/multitest_nonbuild_dir.actual.info ${TEST_DIR}/expected_results/multitest.expected.info
 popd
 
@@ -181,12 +181,22 @@ test "$mfc" -eq "2"
 coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9  --lcov -o redirected.output.info > redirected.output.info.log 2>redirected.output.info.log
 
 # Test (default name for json)
-coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 -p
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9
 test -f "coverage.json"
 
 # Test (default name for lcov)
-coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --lcov -p
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --lcov
 test -f "coverage.info"
+
+# Test (exclude using glob)
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/exclude_glob_test.info --lcov --exclude-glob '*/source*.cpp' -o exclude_glob_test.actual.info
+cmp exclude_glob_test.actual.info ${TEST_DIR}/expected_results/exclude_glob_test.expected.info
+
+# Test (print coverage info)
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/exclude_glob_test.info --lcov -o print_coverage.info -p 2>print_coverage.info.log
+cat print_coverage.info.log | grep 'Files Coverage'
+cat print_coverage.info.log | grep 'Functions Coverage'
+cat print_coverage.info.log | grep 'Lines Coverage'
 
 # Write out coverage as xml
 coverage combine
