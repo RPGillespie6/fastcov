@@ -646,7 +646,7 @@ def getGcovCoverage(args):
 def formatCoveredItems(covered, total):
     coverage = (covered * 100.0) / total if total > 0 else 100.0
     coverage = round(coverage, 2)
-    return "{:.2f}, {}/{}".format(coverage, covered, total)
+    return "{:.2f}%, {}/{}".format(coverage, covered, total)
 
 def dumpStatistic(fastcov_json):
     total_lines = 0
