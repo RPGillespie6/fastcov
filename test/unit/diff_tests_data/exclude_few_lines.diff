@@ -1,0 +1,37 @@
+diff --git a/test/functional/cmake_project/src/source1.cpp b/test/functional/cmake_project/src/source1.cpp
+index 0c5409a..ac53825 100644
+--- a/test/functional/cmake_project/src/source1.cpp
++++ b/test/functional/cmake_project/src/source1.cpp
+@@ -2,13 +2,13 @@
+ 
+ int foo(bool take_branch)
+ {
+-    int x = 0;
++    int x = 0;//test
+ 
+-    for (int i = 0; i < 1000; i++) {
++    for (int i = 0; i < 1000; i++) {//test
+         x += 2*i;
+ 
+         if (take_branch)
+-            x += i;
++            x += i;//test
+     }
+ 
+     return x;
+diff --git a/test/functional/cmake_project/src/source2.cpp b/test/functional/cmake_project/src/source2.cpp
+index 14c9576..d3f3b51 100644
+--- a/test/functional/cmake_project/src/source2.cpp
++++ b/test/functional/cmake_project/src/source2.cpp
+@@ -2,8 +2,8 @@
+ 
+ int bar(bool a, int b, int c)
+ {
+-    if (a)
++    if (a)//test
+         return b + c;
+ 
+-    return b - c;
++    return b - c;//test
+ }
+\ No newline at end of file
