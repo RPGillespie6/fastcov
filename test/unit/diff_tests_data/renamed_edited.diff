@@ -1,0 +1,16 @@
+diff --git a/test2.txt b/test5.txt
+similarity index 93%
+rename from test2.txt
+rename to test5.txt
+index 6971d41..3a00f05 100644
+--- a/test2.txt
++++ b/test5.txt
+@@ -5,7 +5,7 @@ def test_DiffParser_parseDiffFile_empty():
+
+ def test_DiffParser_parseDiffFile_no_files():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/no_files.diff', '/base')
+-    assert not result
++    assert not result added line
+
+ def test_DiffParser_parseDiffFile_deleted_file():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/deleted_file.diff', '/base')

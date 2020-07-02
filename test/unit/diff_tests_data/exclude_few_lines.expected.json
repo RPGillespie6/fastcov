@@ -1,0 +1,35 @@
+{
+    "sources": {
+        "/mnt/workspace/test/functional/cmake_project/src/source2.cpp": {
+            "": {
+                "functions": {},
+                "branches": {
+                    "5": [
+                        10,
+                        0
+                    ]
+                },
+                "lines": {
+                    "5": 10,
+                    "8": 0
+                }
+            }
+        },
+        "/mnt/workspace/test/functional/cmake_project/src/source1.cpp": {
+            "": {
+                "functions": {},
+                "branches": {
+                    "7": [
+                        1000,
+                        1
+                    ]
+                },
+                "lines": {
+                    "5": 1,
+                    "7": 1001,
+                    "11": 0
+                }
+            }
+        }
+    }
+}

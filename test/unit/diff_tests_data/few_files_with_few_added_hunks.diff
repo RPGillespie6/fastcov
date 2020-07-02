@@ -1,0 +1,77 @@
+diff --git a/test.txt b/test.txt
+index 003b84f..87f85cc 100755
+--- a/test.txt
++++ b/test.txt
+@@ -1,4 +1,14 @@
+
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
++
+ def test_DiffParser_parseDiffFile_empty():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
+     assert not result
+@@ -10,3 +20,14 @@ def test_DiffParser_parseDiffFile_no_files():
+ def test_DiffParser_parseDiffFile_deleted_file():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/deleted_file.diff', '/base')
+     assert not result
++
++
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
+\ No newline at end of file
+diff --git a/test2.txt b/test2.txt
+index 6971d41..a4e662e 100644
+--- a/test2.txt
++++ b/test2.txt
+@@ -7,6 +7,10 @@ def test_DiffParser_parseDiffFile_no_files():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/no_files.diff', '/base')
+     assert not result
+
++def test_DiffParser_parseDiffFile_no_files():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/no_files.diff', '/base')
++    assert not result
++
+ def test_DiffParser_parseDiffFile_deleted_file():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/deleted_file.diff', '/base')
+     assert not result
+diff --git a/test3.txt b/test3.txt
+index 6971d41..55d250a 100644
+--- a/test3.txt
++++ b/test3.txt
+@@ -2,6 +2,13 @@
+ def test_DiffParser_parseDiffFile_empty():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
+     assert not result
++
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
++def test_DiffParser_parseDiffFile_empty():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/empty.diff', '/base')
++    assert not result
+
+ def test_DiffParser_parseDiffFile_no_files():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/no_files.diff', '/base')
+@@ -11,3 +18,8 @@ def test_DiffParser_parseDiffFile_deleted_file():
+     result = fastcov.DiffParser().parseDiffFile('diff_files/deleted_file.diff', '/base')
+     assert not result
+
++
++def test_DiffParser_parseDiffFile_deleted_file():
++    result = fastcov.DiffParser().parseDiffFile('diff_files/deleted_file.diff', '/base')
++    assert not result
++

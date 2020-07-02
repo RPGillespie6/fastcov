@@ -60,6 +60,133 @@ class FastcovFormatter(logging.Formatter):
         log_message = super(FastcovFormatter, self).format(record)
         return "[{:.3f}s] {}".format(stopwatch(), log_message)
 
+class DiffParseError(Exception):
+    pass
+
+class DiffParser(object):
+    def _refinePaths(self, diff_metadata, diff_base_dir):
+        diff_metadata.pop('/dev/null', None)
+        diff_metadata.pop('', None)
+        for key, value in diff_metadata.copy().items():
+            diff_metadata.pop(key)
+            #sources without added lines will be excluded
+            if value:
+                newpath = os.path.join(diff_base_dir, key) if diff_base_dir else os.path.abspath(key)
+                newpath = newpath.replace('\\', '/')
+                diff_metadata[newpath] = value
+
+    def _parseTargetFile(self, line_with_target_file):
+        #f.e. '+++ b/README.md1' or '+++ b/README.md1   timestamp'
+        target_source = line_with_target_file[4:].partition('\t')[0].strip()
+        target_source = target_source[2:] if target_source.startswith('b/') else target_source
+        return target_source
+
+    def _parseHunkBoundaries(self, line_with_hunk_boundaries, line_index):
+        #f.e. '@@ -121,4 +122,4 @@ Time to process all gcda and parse all gcov:'
+        # Here ['-121,4', '+122,4']
+        lines_info = line_with_hunk_boundaries[3:].partition("@@")[0].strip().split(' ')
+        if len(lines_info) != 2:
+            raise DiffParseError("Found invalid hunk. Line #{}. {}".format(line_index, line_with_hunk_boundaries))
+        # Here ['122','4']
+        target_lines_info = lines_info[1].strip('+').partition(',')
+        target_line_current = int(target_lines_info[0])
+        target_lines_count = int(target_lines_info[2]) if target_lines_info[2] else 1
+
+        # Here ['121','4']
+        source_lines_info = lines_info[0].strip('-').partition(',')
+        source_line_current = int(source_lines_info[0])
+        source_lines_count = int(source_lines_info[2]) if source_lines_info[2] else 1
+        return target_line_current, target_lines_count, source_line_current, source_lines_count
+
+    def parseDiffFile(self, diff_file, diff_base_dir, fallback_encodings=[]):
+        diff_metadata = {}
+        target_source = None
+        target_hunk = set()
+        target_line_current = 0
+        target_line_end = 0
+        source_line_current = 0
+        source_line_end = 0
+        found_hunk = False
+        for i, line in enumerate(getSourceLines(diff_file, fallback_encodings), 1):
+            line = line.rstrip()
+            if not found_hunk:
+                if line.startswith('+++ '):
+                    # refresh file
+                    target_source = self._parseTargetFile(line)
+                elif line.startswith('@@ '):
+                    # refresh hunk
+                    target_line_current, target_lines_count, source_line_current, source_lines_count =  self._parseHunkBoundaries(line, i)
+                    target_line_end = target_line_current + target_lines_count
+                    source_line_end = source_line_current + source_lines_count
+                    target_hunk = set()
+                    found_hunk = True
+                continue
+            if target_line_current > target_line_end or source_line_current > source_line_end:
+                raise DiffParseError("Hunk longer than expected. Line #{}. {}".format(i, line))
+
+            if line.startswith('+'):
+                #line related to target
+                target_hunk.add(target_line_current)
+                target_line_current = target_line_current + 1
+            elif line.startswith(' ') or line == '':
+                # line related to both
+                target_line_current = target_line_current + 1
+                source_line_current = source_line_current + 1
+            elif line.startswith('-'):
+                # line related to source
+                source_line_current = source_line_current + 1
+            elif not line.startswith('\\'):  # No newline at end of file
+                # line with newline marker is not included into any boundaries
+                raise DiffParseError("Found unrecognized hunk line type. Line #{}. {}".format(i, line))
+
+            if target_line_current == target_line_end and source_line_current == source_line_end:
+                # Checked all lines, save data
+                if target_source in diff_metadata:
+                    diff_metadata[target_source] = target_hunk.union(diff_metadata[target_source])
+                else:
+                    diff_metadata[target_source] = target_hunk
+                target_hunk = set()
+                found_hunk = False
+
+        if target_line_current != target_line_end or source_line_current != source_line_end:
+            raise DiffParseError("Unexpected end of file. Expected hunk with {} target lines, {} source lines".format(
+                target_line_end - target_line_current, source_line_end - source_line_current))
+
+        self._refinePaths(diff_metadata, diff_base_dir)
+        return diff_metadata
+
+    def filterByDiff(self, diff_file, dir_base_dir, fastcov_json, fallback_encodings=[]):
+        diff_metadata = self.parseDiffFile(diff_file, dir_base_dir, fallback_encodings)
+        logging.debug("Include only next files: {}".format(diff_metadata.keys()))
+        excluded_files_count = 0
+        excluded_lines_count = 0
+        for source in list(fastcov_json["sources"].keys()):
+            diff_lines = diff_metadata.get(source, None)
+            if not diff_lines:
+                excluded_files_count = excluded_files_count + 1
+                logging.debug("Exclude {} according to diff file".format(source))
+                fastcov_json["sources"].pop(source)
+                continue
+            for test_name, report_data in fastcov_json["sources"][source].copy().items():
+                #No info about functions boundaries, removing all
+                for function in list(report_data["functions"].keys()):
+                    report_data["functions"].pop(function, None)
+                for line in list(report_data["lines"].keys()):
+                    if line not in diff_lines:
+                        excluded_lines_count = excluded_lines_count + 1
+                        report_data["lines"].pop(line)
+                for branch_line in list(report_data["branches"].keys()):
+                    if branch_line not in diff_lines:
+                        report_data["branches"].pop(branch_line)
+                if len(report_data["lines"]) == 0:
+                    fastcov_json["sources"][source].pop(test_name)
+            if len(fastcov_json["sources"][source]) == 0:
+                excluded_files_count = excluded_files_count + 1
+                logging.debug('Exclude {} file as it has no lines due to diff filter'.format(source))
+                fastcov_json["sources"].pop(source)
+        logging.info("Excluded {} files and {} lines according to diff file".format(excluded_files_count, excluded_lines_count))
+        return fastcov_json
+
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
@@ -710,6 +837,8 @@ def parseArgs():
     parser.add_argument('-i', '--include',      dest='includepost', nargs="+", metavar='', default=[], help='Filter: Only include source files in final report that contain one of the provided substrings (i.e. src/ etc.)')
     parser.add_argument('-f', '--gcda-files',   dest='coverage_files',  nargs="+", metavar='', default=[], help='Filter: Specify exactly which gcda or gcno files should be processed. Note that specifying gcno causes both gcno and gcda to be processed.')
     parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", metavar='', default=[], help='Filter: Exclude gcda or gcno files from being processed via simple find matching (not regex)')
+    parser.add_argument('-u', '--diff-filter', dest='diff_file', default='', help='Unified diff file with changes which will be included into final report')
+    parser.add_argument('-ub', '--diff-base-dir', dest='diff_base_dir', default='', help='Base directory for sources in unified diff file, usually repository dir')
 
     parser.add_argument('-g', '--gcov', dest='gcov', default='gcov', help='Which gcov binary to use')
 
@@ -784,6 +913,10 @@ def main():
     if not skip_exclusion_markers:
         scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
+
+    if args.diff_file:
+        logging.info("Filtering according to {} file".format(args.diff_file))
+        DiffParser().filterByDiff(args.diff_file, args.diff_base_dir, fastcov_json, args.fallback_encodings)
 
     if args.validate_sources:
         validateSources(fastcov_json)

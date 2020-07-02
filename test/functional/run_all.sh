@@ -198,6 +198,10 @@ cat print_coverage.info.log | grep 'Files Coverage: 66.67%, 2/3'
 cat print_coverage.info.log | grep 'Functions Coverage: 60.00%, 3/5'
 cat print_coverage.info.log | grep 'Lines Coverage: 60.00%, 9/15'
 
+# Test (diff filtering)
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/diff_filter_data/basic.json --diff-filter ${TEST_DIR}/expected_results/diff_filter_data/exclude_each_item.diff --diff-base-dir /mnt/workspace -o exclude_each_item.actual.json
+${TEST_DIR}/json_cmp.py exclude_each_item.actual.json ${TEST_DIR}/expected_results/diff_filter_data/exclude_each_item.expected.json
+
 # Write out coverage as xml
 coverage combine
 coverage xml -o coverage.xml
