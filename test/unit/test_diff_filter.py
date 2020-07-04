@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-    Author: Bryan Gillespie
+    Author: Roman Burtnyk
 
-    Make sure fastcov internal utils are working as expected
+    Make sure fastcov diff filtering are working as expected
 """
 
 import json

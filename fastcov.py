@@ -72,7 +72,6 @@ class DiffParser(object):
             #sources without added lines will be excluded
             if value:
                 newpath = os.path.join(diff_base_dir, key) if diff_base_dir else os.path.abspath(key)
-                newpath = newpath.replace('\\', '/')
                 diff_metadata[newpath] = value
 
     def _parseTargetFile(self, line_with_target_file):
