@@ -8,9 +8,15 @@ A parallelized gcov wrapper for generating intermediate coverage formats *fast*
 
 The goal of fastcov is to generate code coverage intermediate formats *as fast as possible*, even for large projects with hundreds of gcda objects. The intermediate formats may then be consumed by a report generator such as lcov's genhtml, or a dedicated front end such as coveralls, codecov, etc. fastcov was originally designed to be a drop-in replacement for lcov (application coverage only, not kernel coverage).
 
-Currently the only intermediate formats supported are gcov json format, fastcov json format, and lcov info format. Adding support for other formats should require just a few lines of python to transform fastcov json format to the desired shape.
+Currently the only coverage formats supported by fastcov are:
 
-In order to achieve the speed gains, a few constraints apply:
+- fastcov json format
+- lcov info format
+- sonarqube xml format (via [utility](utils/) script)
+
+Note that cobertura xml is not currently supported by fastcov, but can still be achieved by converting lcov info format using [lcov_cobertura.py](https://github.com/eriwen/lcov-to-cobertura-xml).
+
+A few prerequisites apply before you can run fastcov:
 
 1. GCC version >= 9.0.0
 
@@ -52,7 +58,7 @@ See the [example](example/) directory for a working CMake example.
 
 ## Installation
 
-A minimum of Python 3.5 is currently required.
+A minimum of Python 3.5 is currently required (due to recursive `glob` usage).
 
 Fastcov is a single source python tool. That means you can simply copy `fastcov.py` from this repository and run it directly with no other hassle.
 
@@ -110,6 +116,20 @@ $ fastcov.py -C report1.info --exclude /usr/include --lcov -o report1_filtered.i
 # Combine 2 reports, (re-)scanning all of the source files contained in the final report for exclusion markers
 $ fastcov.py -C report1.json report2.json --scan-exclusion-markers -o report3.json
 ```
+
+## Utilities
+
+This repository contains a few utilities that are complementary to fastcov. They are located in the [utils](utils/) directory, and like fastcov, are single source python scripts that can be copied from this repository and runned directly. Alternatively, installing the latest version of fastcov using pip will also install this utilities. Here is a brief description of what each utility does:
+
+- [fastcov_summary](utils/fastcov_summary.py)
+
+This utility will summarize a provided fastcov JSON file similar to the way [genhtml](https://linux.die.net/man/1/genhtml) summarizes a given lcov info file. Additionally, flags can be passed that check if a certain coverage threshold is met for function, line, or branch coverage.
+
+This script is useful for 2 purposes. It can be used to print out a coverage summary on the command line for a CI system to parse using regex (such as GitLab CI, for example). This script can also be used to fail builds if (for example) line coverage drops below a certain percentage. 
+
+- [fastcov_to_sonarqube](utils/fastcov_to_sonarqube.py)
+
+This script will convert a provided fastcov JSON file to the Sonar [generic test coverage](https://docs.sonarqube.org/latest/analysis/generic-test/) XML format.
 
 ## Benchmarks
 
