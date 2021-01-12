@@ -20,7 +20,7 @@ script:
   - docker run -v "$TRAVIS_BUILD_DIR":/mnt/workspace -w /mnt/workspace rpgillespie6/fastcov bash -c "cd ./test && ./run_tests.sh"
 
 after_success:
-  - bash <(curl -s https://codecov.io/bash) -X coveragepy -s $TRAVIS_BUILD_DIR # Upload coverage to codecov
+  - bash <(curl -s https://codecov.io/bash) -X gcov -X coveragepy -f test/functional/cmake_project/build/coverage.xml -f test/unit/coverage.xml # Upload coverage to codecov
 
 deploy:
   provider: pypi
