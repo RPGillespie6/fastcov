@@ -18,13 +18,13 @@
         $ ./fastcov.py --exclude /usr/include test/ --lcov -o report.info
         $ genhtml -o code_coverage report.info
 """
-import fnmatch
 import re
 import os
 import sys
 import glob
 import json
 import time
+import fnmatch
 import logging
 import argparse
 import threading
@@ -49,6 +49,7 @@ EXIT_CODES = {
     "python_version": 4,
     "unsupported_coverage_format": 5,
     "excl_not_found": 6,
+    "bad_chunk_file": 7,
 }
 
 # Disable all logging in case developers are using this as a module
@@ -251,15 +252,25 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
     base_report   = {"sources": {}}
     gcovs_total   = 0
     gcovs_skipped = 0
+    error_exit    = False
 
     gcov_args = "-it"
     if args.branchcoverage or args.xbranchcoverage:
         gcov_args += "b"
 
-    workdir = args.cdirectory if args.cdirectory else "."
+    encoding = sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'
+    workdir  = args.cdirectory if args.cdirectory else "."
+
     p = subprocess.Popen([args.gcov, gcov_args] + chunk, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    for line in iter(p.stdout.readline, b''):
-        intermediate_json = json.loads(line.decode(sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'))
+    for i, line in enumerate(iter(p.stdout.readline, b'')):
+        try:
+            intermediate_json = json.loads(line.decode(encoding))
+        except json.decoder.JSONDecodeError as e:
+            logging.error("Could not process chunk file '{}' ({}/{})".format(chunk[i], i, len(chunk)))
+            logging.error(str(e))
+            error_exit = True
+            continue
+
         intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], intermediate_json["current_working_directory"], gcov_filter_options)
         for f in intermediate_json_files:
             distillSource(f, base_report["sources"], args.test_name, args.xbranchcoverage)
@@ -269,6 +280,9 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
     p.wait()
     data_q.put(base_report)
     metrics_q.put((gcovs_total, gcovs_skipped))
+
+    if error_exit:
+        sys.exit(1)
 
 def processGcdas(args, coverage_files, gcov_filter_options):
     chunk_size = max(args.minimum_chunk, int(len(coverage_files) / args.jobs) + 1)
@@ -290,6 +304,8 @@ def processGcdas(args, coverage_files, gcov_filter_options):
 
     for p in processes:
         p.join()
+        if p.exitcode != 0:
+            setExitCode("bad_chunk_file")
 
     base_fastcov = fastcov_jsons.pop()
     for fj in fastcov_jsons:
@@ -314,7 +330,7 @@ def shouldFilterSource(source, gcov_filter_options):
     # Check exclude filter
     for ex_glob in gcov_filter_options["exclude_glob"]:
         if fnmatch.fnmatch(source, ex_glob):
-            logging.debug("Filtering coverage for '%s' due to option '--exclude_glob %s'", source, ex_glob)
+            logging.debug("Filtering coverage for '%s' due to option '--exclude-glob %s'", source, ex_glob)
             return True
 
     # Check include filter
