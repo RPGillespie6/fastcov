@@ -266,7 +266,7 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
         try:
             intermediate_json = json.loads(line.decode(encoding))
         except json.decoder.JSONDecodeError as e:
-            logging.error("Could not process chunk file '{}' ({}/{})".format(chunk[i], i, len(chunk)))
+            logging.error("Could not process chunk file '{}' ({}/{})".format(chunk[i], i+1, len(chunk)))
             logging.error(str(e))
             error_exit = True
             continue
