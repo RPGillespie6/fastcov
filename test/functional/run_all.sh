@@ -165,6 +165,11 @@ rc=0
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --scan-exclusion-markers -o missing.json || rc=$?
 test $rc -eq 6
 
+# Test gcov getting killed or crashing midway through JSON output
+rc=0
+coverage run -a ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov ${TEST_DIR}/bad-gcov.sh --source-files ../src/source1.cpp --lcov -o multitest.actual.info || rc=$?
+test $rc -eq 7
+
 # Test (running data from other than build directory)
 RUN_DIR=${PWD}
 pushd ${TEST_DIR}
