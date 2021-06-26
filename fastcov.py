@@ -196,6 +196,10 @@ def setExitCode(key):
     global EXIT_CODE
     EXIT_CODE = EXIT_CODES[key]
 
+def setExitCodeRaw(code):
+    global EXIT_CODE
+    EXIT_CODE = code
+
 def incrementCounters(total, skipped):
     global GCOVS_TOTAL
     global GCOVS_SKIPPED
@@ -440,13 +444,14 @@ def getSourceLines(source, fallback_encodings=[]):
     with open(source, errors="ignore") as f:
         return f.readlines()
 
+# Returns whether source coverage changed or not
 def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, fallback_encodings):
     # Before doing any work, check if this file even needs to be processed
     if not exclude_branches_sw and not include_branches_sw:
         # Ignore unencodable characters
         with open(source, errors="ignore") as f:
             if "LCOV_EXCL" not in f.read():
-                return
+                return False
     
     # If we've made it this far we have to check every line
     
@@ -510,26 +515,49 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                 if i in fastcov_data["branches"]:
                     del fastcov_data["branches"][i]
 
-def exclMarkerWorker(fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings):
+    # Source coverage changed 
+    return True
+
+def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings):
+    changed_sources = []
+
     for source in chunk:
         try:
-            exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, fallback_encodings)
+            if exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, fallback_encodings):
+                changed_sources.append((source, fastcov_sources[source]))
         except FileNotFoundError:
             logging.error("Could not find '%s' to scan for exclusion markers...", source)
             setExitCode("excl_not_found") # Set exit code because of error
 
-def scanExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings):
+    # Write out changed sources back to main fastcov file
+    data_q.put(changed_sources)
+
+    # Exit current process with appropriate code
+    sys.exit(EXIT_CODE)
+
+def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
-    threads = []
+    processes = []
+    data_q    = multiprocessing.Queue()
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        t = threading.Thread(target=exclMarkerWorker, args=(fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, fallback_encodings))
-        threads.append(t)
-        t.start()
+        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, fallback_encodings))
+        processes.append(p)
+        p.start()
 
-    logging.info("Spawned {} threads each scanning at most {} source files".format(len(threads), chunk_size))
-    for t in threads:
-        t.join()
+    logging.info("Spawned {} exclusion marker scanning processes, each processing at most {} source files".format(len(processes), chunk_size))
+
+    changed_sources = []
+    for p in processes:
+        changed_sources += data_q.get()
+
+    for p in processes:
+        p.join()
+        if p.exitcode != 0:
+            setExitCodeRaw(p.exitcode)
+
+    for changed_source in changed_sources:
+        fastcov_json["sources"][changed_source[0]] = changed_source[1]
 
 def validateSources(fastcov_json):
     logging.info("Checking if all sources exist")
@@ -937,7 +965,7 @@ def main():
 
     # Scan for exclusion markers
     if not skip_exclusion_markers:
-        scanExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
+        processExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     if args.diff_file:
