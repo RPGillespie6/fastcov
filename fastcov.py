@@ -31,7 +31,7 @@ import threading
 import subprocess
 import multiprocessing
 
-FASTCOV_VERSION = (1,11)
+FASTCOV_VERSION = (1,13)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
@@ -454,7 +454,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                 return False
     
     # If we've made it this far we have to check every line
-    
+
     start_line = 0
     end_line = 0
     # Start enumeration at line 1 because the first line of the file is line 1 not 0
