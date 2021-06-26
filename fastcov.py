@@ -441,6 +441,15 @@ def getSourceLines(source, fallback_encodings=[]):
         return f.readlines()
 
 def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, fallback_encodings):
+    # Before doing any work, check if this file even needs to be processed
+    if not exclude_branches_sw and not include_branches_sw:
+        # Ignore unencodable characters
+        with open(source, errors="ignore") as f:
+            if "LCOV_EXCL" not in f.read():
+                return
+    
+    # If we've made it this far we have to check every line
+    
     start_line = 0
     end_line = 0
     # Start enumeration at line 1 because the first line of the file is line 1 not 0
@@ -449,6 +458,17 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
         for test_name in fastcov_sources[source]:
             fastcov_data = fastcov_sources[source][test_name]
 
+            # Check if branch coverage should be deleted based on CLI options
+            if (exclude_branches_sw or include_branches_sw) and (i in fastcov_data["branches"]):
+                del_exclude_br = exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw)
+                del_include_br = include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw)
+                if del_exclude_br or del_include_br:
+                    del fastcov_data["branches"][i]
+
+            # Skip to next line as soon as possible
+            if "LCOV_EXCL" not in line:
+                continue
+
             # Build line to function dict so can quickly delete by line number
             line_to_func = {}
             for f in fastcov_data["functions"].keys():
@@ -456,15 +476,6 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                 if l not in line_to_func:
                     line_to_func[l] = set()
                 line_to_func[l].add(f)
-
-            if i in fastcov_data["branches"]:
-                del_exclude_br = exclude_branches_sw and any(line.lstrip().startswith(e) for e in exclude_branches_sw)
-                del_include_br = include_branches_sw and all(not line.lstrip().startswith(e) for e in include_branches_sw)
-                if del_exclude_br or del_include_br:
-                    del fastcov_data["branches"][i]
-
-            if "LCOV_EXCL" not in line:
-                continue
 
             if "LCOV_EXCL_LINE" in line:
                 for key in ["lines", "branches"]:
