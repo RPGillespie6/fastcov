@@ -50,6 +50,7 @@ EXIT_CODES = {
     "unsupported_coverage_format": 5,
     "excl_not_found": 6,
     "bad_chunk_file": 7,
+    "missing_json_key": 8,
 }
 
 # Disable all logging in case developers are using this as a module
@@ -272,7 +273,12 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
         except json.decoder.JSONDecodeError as e:
             logging.error("Could not process chunk file '{}' ({}/{})".format(chunk[i], i+1, len(chunk)))
             logging.error(str(e))
-            error_exit = True
+            setExitCode("bad_chunk_file")
+            continue
+
+        if "current_working_directory" not in intermediate_json:
+            logging.error("Missing 'current_working_directory' for data file: {}".format(intermediate_json))
+            setExitCode("missing_json_key")
             continue
 
         intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], intermediate_json["current_working_directory"], gcov_filter_options)
@@ -285,8 +291,7 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
     data_q.put(base_report)
     metrics_q.put((gcovs_total, gcovs_skipped))
 
-    if error_exit:
-        sys.exit(1)
+    sys.exit(EXIT_CODE)
 
 def processGcdas(args, coverage_files, gcov_filter_options):
     chunk_size = max(args.minimum_chunk, int(len(coverage_files) / args.jobs) + 1)
@@ -309,7 +314,7 @@ def processGcdas(args, coverage_files, gcov_filter_options):
     for p in processes:
         p.join()
         if p.exitcode != 0:
-            setExitCode("bad_chunk_file")
+            setExitCodeRaw(p.exitcode)
 
     base_fastcov = fastcov_jsons.pop()
     for fj in fastcov_jsons:

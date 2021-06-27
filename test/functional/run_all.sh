@@ -207,6 +207,12 @@ cat print_coverage.info.log | grep 'Lines Coverage: 60.00%, 9/15'
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/diff_filter_data/basic.json --diff-filter ${TEST_DIR}/expected_results/diff_filter_data/exclude_each_item.diff --diff-base-dir /mnt/workspace -o exclude_each_item.actual.json
 ${TEST_DIR}/json_cmp.py exclude_each_item.actual.json ${TEST_DIR}/expected_results/diff_filter_data/exclude_each_item.expected.json
 
+# Test (empty gcno)
+touch empty.gcno
+rc=0
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --process-gcno || rc=$?
+test $rc -eq 8
+
 # Write out coverage as xml
 coverage combine
 coverage xml -o coverage.xml
