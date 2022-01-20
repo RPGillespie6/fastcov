@@ -8,7 +8,7 @@
     A massively parallel gcov wrapper for generating intermediate coverage formats fast
 
     The goal of fastcov is to generate code coverage intermediate formats as fast as possible,
-    even for large projects with hundreds of gcda objects. The intermediate formats may then be
+    even for large projects with thousands of gcda and gcno objects. The intermediate formats may then be
     consumed by a report generator such as lcov's genhtml, or a dedicated frontend such as coveralls.
 
     Sample Usage:
@@ -246,8 +246,9 @@ def getFilteredCoverageFiles(coverage_files, exclude):
 def findCoverageFiles(cwd, coverage_files, use_gcno):
     coverage_type = "user provided"
     if not coverage_files:
-        coverage_type = "gcno" if use_gcno else "gcda"
-        coverage_files = glob.glob(os.path.join(os.path.abspath(cwd), "**/*." + coverage_type), recursive=True)
+        coverage_files = glob.glob(os.path.join(os.path.abspath(cwd), "**/*.gcda"), recursive=True)
+        if use_gcno:
+            coverage_files += glob.glob(os.path.join(os.path.abspath(cwd), "**/*.gcno"), recursive=True)
 
     logging.info("Found {} coverage files ({})".format(len(coverage_files), coverage_type))
     logging.debug("Coverage files found:\n    %s", "\n    ".join(coverage_files))
@@ -806,7 +807,7 @@ def getGcovCoverage(args):
     checkGcovVersion(getGcovVersion(args.gcov))
 
     # Get list of gcda files to process
-    coverage_files = findCoverageFiles(args.directory, args.coverage_files, args.use_gcno)
+    coverage_files = findCoverageFiles(args.directory, args.coverage_files, args.use_gcno and not args.zerocounters)
 
     # If gcda/gcno filtering is enabled, filter them out now
     if args.excludepre:
