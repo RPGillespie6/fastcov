@@ -40,6 +40,10 @@ START_TIME    = time.monotonic()
 GCOVS_TOTAL   = 0
 GCOVS_SKIPPED = 0
 
+# Gcov Coverage File Extensions
+GCOV_GCNO_EXT = ".gcno" # gcno = "[gc]ov [no]te"
+GCOV_GCDA_EXT = ".gcda" # gcda = "[gc]ov [da]ta"
+
 # For when things go wrong...
 # Start error codes at 3 because 1-2 are special
 # See https://stackoverflow.com/a/1535733/2516916
@@ -243,11 +247,16 @@ def getFilteredCoverageFiles(coverage_files, exclude):
         return True
     return list(filter(excludeGcda, coverage_files))
 
+def globCoverageFiles(cwd, coverage_type):
+    return glob.glob(os.path.join(os.path.abspath(cwd), "**/*" + coverage_type), recursive=True)
+
 def findCoverageFiles(cwd, coverage_files, use_gcno):
     coverage_type = "user provided"
     if not coverage_files:
-        coverage_type = "gcno" if use_gcno else "gcda"
-        coverage_files = glob.glob(os.path.join(os.path.abspath(cwd), "**/*." + coverage_type), recursive=True)
+        # gcov strips off extension of whatever you pass it and searches [extensionless name] + .gcno/.gcda
+        # We should pass either gcno or gcda, but not both - if you pass both it will be processed twice
+        coverage_type = GCOV_GCNO_EXT if use_gcno else GCOV_GCDA_EXT
+        coverage_files = globCoverageFiles(cwd, coverage_type)
 
     logging.info("Found {} coverage files ({})".format(len(coverage_files), coverage_type))
     logging.debug("Coverage files found:\n    %s", "\n    ".join(coverage_files))
@@ -816,7 +825,7 @@ def getGcovCoverage(args):
 
     # We "zero" the "counters" by simply deleting all gcda files
     if args.zerocounters:
-        removeFiles(coverage_files)
+        removeFiles(globCoverageFiles(args.directory, GCOV_GCDA_EXT))
         logging.info("Removed {} .gcda files".format(len(coverage_files)))
         sys.exit()
 
