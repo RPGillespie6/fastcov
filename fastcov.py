@@ -259,14 +259,15 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
     gcovs_skipped = 0
     error_exit    = False
 
-    gcov_args = "-it"
+    gcov_bin = args.gcov
+    gcov_args = ["--json-format", "--stdout"]
     if args.branchcoverage or args.xbranchcoverage:
-        gcov_args += "b"
+        gcov_args.append("--branch-probabilities")
 
     encoding = sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'
     workdir  = args.cdirectory if args.cdirectory else "."
 
-    p = subprocess.Popen([args.gcov, gcov_args] + chunk, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    p = subprocess.Popen([gcov_bin] + gcov_args + chunk, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     for i, line in enumerate(iter(p.stdout.readline, b'')):
         try:
             intermediate_json = json.loads(line.decode(encoding))
@@ -457,7 +458,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
         with open(source, errors="ignore") as f:
             if "LCOV_EXCL" not in f.read():
                 return False
-    
+
     # If we've made it this far we have to check every line
 
     start_line = 0
@@ -520,7 +521,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                 if i in fastcov_data["branches"]:
                     del fastcov_data["branches"][i]
 
-    # Source coverage changed 
+    # Source coverage changed
     return True
 
 def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings):
