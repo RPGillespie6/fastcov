@@ -533,7 +533,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
     # Source coverage changed
     return True
 
-def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings):
+def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings, validate_sources):
     changed_sources = []
 
     for source in chunk:
@@ -542,7 +542,8 @@ def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, includ
                 changed_sources.append((source, fastcov_sources[source]))
         except FileNotFoundError:
             logging.error("Could not find '%s' to scan for exclusion markers...", source)
-            setExitCode("excl_not_found") # Set exit code because of error
+            if validate_sources:
+                setExitCode("excl_not_found") # Set exit code because of error
 
     # Write out changed sources back to main fastcov file
     data_q.put(changed_sources)
@@ -550,13 +551,13 @@ def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, includ
     # Exit current process with appropriate code
     sys.exit(EXIT_CODE)
 
-def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings):
+def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings, validate_sources):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     processes = []
     data_q    = multiprocessing.Queue()
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, fallback_encodings))
+        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, fallback_encodings, validate_sources))
         processes.append(p)
         p.start()
 
@@ -980,7 +981,7 @@ def main():
 
     # Scan for exclusion markers
     if not skip_exclusion_markers:
-        processExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
+        processExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings, args.validate_sources)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     if args.diff_file:
