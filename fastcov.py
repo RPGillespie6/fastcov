@@ -742,13 +742,13 @@ def parseInfo(path):
                 current_test_name = line[3:].strip()
             elif line.startswith("SF:"):
                 current_sf = line[3:].strip()
-                fastcov_json["sources"][current_sf] = {
+                fastcov_json["sources"].setdefault(current_sf, {
                     current_test_name: {
                         "functions": {},
                         "branches": {},
                         "lines": {},
                     }
-                }
+                })
                 current_data = fastcov_json["sources"][current_sf][current_test_name]
             elif line.startswith("FN:"):
                 line_num, function_name = line[3:].strip().split(",")
