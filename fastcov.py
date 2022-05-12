@@ -912,7 +912,7 @@ def parseArgs():
     parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", metavar='', default=[], help='Filter: Exclude gcda or gcno files from being processed via simple find matching (not regex)')
     parser.add_argument('-u', '--diff-filter', dest='diff_file', default='', help='Unified diff file with changes which will be included into final report')
     parser.add_argument('-ub', '--diff-base-dir', dest='diff_base_dir', default='', help='Base directory for sources in unified diff file, usually repository dir')
-    parser.add_argument('-ce', '--custom_exclusion_maker ', dest='exclude_line_marker', nargs="+", metavar='', default=[], help='Filter: Add filter for lines that will be excluded from coverage (same behavior as "LCOV_EXCL_LINE)')
+    parser.add_argument('-ce', '--custom_exclusion_maker', dest='exclude_line_marker', nargs="+", metavar='', default=[], help='Filter: Add filter for lines that will be excluded from coverage (same behavior as "LCOV_EXCL_LINE)')
 
     parser.add_argument('-g', '--gcov', dest='gcov', default='gcov', help='Which gcov binary to use')
 
