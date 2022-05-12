@@ -460,12 +460,12 @@ def getSourceLines(source, fallback_encodings=[]):
         return f.readlines()
 
 # Returns whether source coverage changed or not
-def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, fallback_encodings):
+def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings):
     # Before doing any work, check if this file even needs to be processed
     if not exclude_branches_sw and not include_branches_sw:
         # Ignore unencodable characters
         with open(source, errors="ignore") as f:
-            if "LCOV_EXCL" not in f.read():
+            if not exclude_line_marker and "LCOV_EXCL" not in f.read():
                 return False
 
     # If we've made it this far we have to check every line
@@ -486,7 +486,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                     del fastcov_data["branches"][i]
 
             # Skip to next line as soon as possible
-            if "LCOV_EXCL" not in line:
+            if (not exclude_line_marker and "LCOV_EXCL" not in line) or not any(val in line for val in exclude_line_marker):
                 continue
 
             # Build line to function dict so can quickly delete by line number
@@ -497,7 +497,10 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                     line_to_func[l] = set()
                 line_to_func[l].add(f)
 
-            if "LCOV_EXCL_LINE" in line:
+            if "LCOV_EXCL_LINE" not in exclude_line_marker:
+                exclude_line_marker.append("LCOV_EXCL_LINE") # add default value to list
+
+            if any(val in line for val in exclude_line_marker):
                 for key in ["lines", "branches"]:
                     if i in fastcov_data[key]:
                         del fastcov_data[key][i]
@@ -533,12 +536,12 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
     # Source coverage changed
     return True
 
-def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, fallback_encodings):
+def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings):
     changed_sources = []
 
     for source in chunk:
         try:
-            if exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, fallback_encodings):
+            if exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings):
                 changed_sources.append((source, fastcov_sources[source]))
         except FileNotFoundError:
             logging.error("Could not find '%s' to scan for exclusion markers...", source)
@@ -550,13 +553,13 @@ def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, includ
     # Exit current process with appropriate code
     sys.exit(EXIT_CODE)
 
-def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, min_chunk_size, fallback_encodings):
+def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, exclude_line_marker, min_chunk_size, fallback_encodings):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     processes = []
     data_q    = multiprocessing.Queue()
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, fallback_encodings))
+        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings))
         processes.append(p)
         p.start()
 
@@ -909,6 +912,7 @@ def parseArgs():
     parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", metavar='', default=[], help='Filter: Exclude gcda or gcno files from being processed via simple find matching (not regex)')
     parser.add_argument('-u', '--diff-filter', dest='diff_file', default='', help='Unified diff file with changes which will be included into final report')
     parser.add_argument('-ub', '--diff-base-dir', dest='diff_base_dir', default='', help='Base directory for sources in unified diff file, usually repository dir')
+    parser.add_argument('-ce', '--custom_exclusion_maker ', dest='exclude_line_marker', nargs="+", metavar='', default=[], help='Filter: Add filter for lines that will be excluded from coverage (same behavior as "LCOV_EXCL_LINE)')
 
     parser.add_argument('-g', '--gcov', dest='gcov', default='gcov', help='Which gcov binary to use')
 
@@ -981,7 +985,7 @@ def main():
 
     # Scan for exclusion markers
     if not skip_exclusion_markers:
-        processExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.minimum_chunk, args.fallback_encodings)
+        processExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.exclude_line_marker, args.minimum_chunk, args.fallback_encodings)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     if args.diff_file:
