@@ -97,6 +97,10 @@ ${TEST_DIR}/json_cmp.py basic.fastcov3.actual.json ${TEST_DIR}/expected_results/
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test2.expected.info ${TEST_DIR}/expected_results/test1.tn.expected.info --lcov -o combine1.actual.info
 cmp combine1.actual.info ${TEST_DIR}/expected_results/combine1.expected.info
 
+# Combine operation - hyphens
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test2hyphen.expected.info ${TEST_DIR}/expected_results/test1.tn.expected.info --lcov -o combine1.actual.info
+cmp combine1.actual.info ${TEST_DIR}/expected_results/combine1.expected.info
+
 # Combine operation - Mix and Match json/info
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test2.expected.fastcov.json ${TEST_DIR}/expected_results/test1.tn.expected.info --lcov -o combine1.actual.info
 cmp combine1.actual.info ${TEST_DIR}/expected_results/combine1.expected.info
