@@ -765,6 +765,7 @@ def parseInfo(path):
                 line_num, count = branch_tokens[0], branch_tokens[-1]
                 if line_num not in current_data["branches"]:
                     current_data["branches"][line_num] = []
+                count = 0 if count == "-" else count # hyphen (branch not evaluated) treated as zero
                 current_data["branches"][line_num].append(int(count))
 
     return fastcov_json
