@@ -459,13 +459,19 @@ def getSourceLines(source, fallback_encodings=[]):
     with open(source, errors="ignore") as f:
         return f.readlines()
 
+def containsMarker(markers, strBody):
+    for marker in markers:
+        if marker in strBody:
+            return True
+    return False
+
 # Returns whether source coverage changed or not
 def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings):
     # Before doing any work, check if this file even needs to be processed
     if not exclude_branches_sw and not include_branches_sw:
         # Ignore unencodable characters
         with open(source, errors="ignore") as f:
-            if not exclude_line_marker and "LCOV_EXCL" not in f.read():
+            if not containsMarker(exclude_line_marker + ["LCOV_EXCL"], f.read()):
                 return False
 
     # If we've made it this far we have to check every line
@@ -486,7 +492,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                     del fastcov_data["branches"][i]
 
             # Skip to next line as soon as possible
-            if (not exclude_line_marker and "LCOV_EXCL" not in line) and not any(marker in line for marker in exclude_line_marker):
+            if not containsMarker(exclude_line_marker + ["LCOV_EXCL"], line):
                 continue
 
             # Build line to function dict so can quickly delete by line number
@@ -496,9 +502,6 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                 if l not in line_to_func:
                     line_to_func[l] = set()
                 line_to_func[l].add(f)
-
-            if "LCOV_EXCL_LINE" not in exclude_line_marker:
-                exclude_line_marker.append("LCOV_EXCL_LINE") # add default value to list
 
             if any(marker in line for marker in exclude_line_marker):
                 for key in ["lines", "branches"]:
@@ -912,7 +915,7 @@ def parseArgs():
     parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", metavar='', default=[], help='Filter: Exclude gcda or gcno files from being processed via simple find matching (not regex)')
     parser.add_argument('-u', '--diff-filter', dest='diff_file', default='', help='Unified diff file with changes which will be included into final report')
     parser.add_argument('-ub', '--diff-base-dir', dest='diff_base_dir', default='', help='Base directory for sources in unified diff file, usually repository dir')
-    parser.add_argument('-ce', '--custom-exclusion-marker', dest='exclude_line_marker', nargs="+", metavar='', default=[], help='Filter: Add filter for lines that will be excluded from coverage (same behavior as "LCOV_EXCL_LINE")')
+    parser.add_argument('-ce', '--custom-exclusion-marker', dest='exclude_line_marker', nargs="+", metavar='', default=["LCOV_EXCL_LINE"], help='Filter: Add filter for lines that will be excluded from coverage (same behavior as "LCOV_EXCL_LINE")')
 
     parser.add_argument('-g', '--gcov', dest='gcov', default='gcov', help='Which gcov binary to use')
 
