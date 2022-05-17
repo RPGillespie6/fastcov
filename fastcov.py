@@ -31,7 +31,7 @@ import threading
 import subprocess
 import multiprocessing
 
-FASTCOV_VERSION = (1,14)
+FASTCOV_VERSION = (1,15)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
