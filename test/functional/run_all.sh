@@ -77,6 +77,10 @@ cmp untested.actual.info ${TEST_DIR}/expected_results/untested.expected.info
 coverage run -a ${TEST_DIR}/fastcov.py --exceptional-branch-coverage --gcov gcov-9 --process-gcno --gcda-files ./test/CMakeFiles/test1.dir/__/src/source1.cpp.gcno ./test/CMakeFiles/test1.dir/__/src/source2.cpp.gcno ./src/CMakeFiles/untested.dir/untested.cpp.gcno --lcov -o untested2.actual.info
 cmp untested2.actual.info ${TEST_DIR}/expected_results/untested.expected.info
 
+# Test (basic lcov info - with exclusive line filtering)
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --exclude /usr/include cmake_project/test/ --custom-exclusion-marker foo --lcov -o custom_exclude_line.actual.info
+cmp custom_exclude_line.actual.info ${TEST_DIR}/expected_results/test1.linefilter.expected.info
+
 # Test (gcov version fail)
 if coverage run -a ${TEST_DIR}/fastcov.py --gcov ${TEST_DIR}/fake-gcov.sh ; then
     echo "Expected gcov version check to fail"

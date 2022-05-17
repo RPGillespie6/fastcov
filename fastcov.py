@@ -486,7 +486,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                     del fastcov_data["branches"][i]
 
             # Skip to next line as soon as possible
-            if (not exclude_line_marker and "LCOV_EXCL" not in line) or not any(val in line for val in exclude_line_marker):
+            if (not exclude_line_marker and "LCOV_EXCL" not in line) and not any(marker in line for marker in exclude_line_marker):
                 continue
 
             # Build line to function dict so can quickly delete by line number
@@ -500,7 +500,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
             if "LCOV_EXCL_LINE" not in exclude_line_marker:
                 exclude_line_marker.append("LCOV_EXCL_LINE") # add default value to list
 
-            if any(val in line for val in exclude_line_marker):
+            if any(marker in line for marker in exclude_line_marker):
                 for key in ["lines", "branches"]:
                     if i in fastcov_data[key]:
                         del fastcov_data[key][i]
