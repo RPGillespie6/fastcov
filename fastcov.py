@@ -234,6 +234,17 @@ def getGcovVersion(gcov):
     p.wait()
     return parseVersionFromLine(output.split("\n")[0])
 
+def tryParseNumber(s):
+    try:
+        return int(s)
+    except ValueError:
+        # Log a warning if not hyphen
+        if s != "-":
+            logging.warning("Unsupported numerical value '%s', using 0", s)
+
+        # Default to 0 if we can't parse the number (e.g. "-", "NaN", etc.)
+        return 0
+
 def removeFiles(files):
     for file in files:
         os.remove(file)
@@ -759,20 +770,19 @@ def parseInfo(path):
             elif line.startswith("FN:"):
                 line_num, function_name = line[3:].strip().split(",")
                 current_data["functions"][function_name] = {}
-                current_data["functions"][function_name]["start_line"] = int(line_num)
+                current_data["functions"][function_name]["start_line"] = tryParseNumber(line_num)
             elif line.startswith("FNDA:"):
                 count, function_name = line[5:].strip().split(",")
-                current_data["functions"][function_name]["execution_count"] = int(count)
+                current_data["functions"][function_name]["execution_count"] = tryParseNumber(count)
             elif line.startswith("DA:"):
                 line_num, count = line[3:].strip().split(",")
-                current_data["lines"][line_num] = int(count)
+                current_data["lines"][line_num] = tryParseNumber(count)
             elif line.startswith("BRDA:"):
                 branch_tokens = line[5:].strip().split(",")
                 line_num, count = branch_tokens[0], branch_tokens[-1]
                 if line_num not in current_data["branches"]:
                     current_data["branches"][line_num] = []
-                count = 0 if count == "-" else count # hyphen (branch not evaluated) treated as zero
-                current_data["branches"][line_num].append(int(count))
+                current_data["branches"][line_num].append(tryParseNumber(count))
 
     return fastcov_json
 
