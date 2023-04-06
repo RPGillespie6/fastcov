@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/RPGillespie6/fastcov.svg?branch=master)](https://travis-ci.com/RPGillespie6/fastcov)
+[![Build and Test](https://github.com/RPGillespie6/fastcov/actions/workflows/build-test.yaml/badge.svg)](https://github.com/RPGillespie6/fastcov/actions/workflows/build-test.yaml)
 [![Code Coverage](https://img.shields.io/codecov/c/github/rpgillespie6/fastcov.svg)](https://codecov.io/gh/RPGillespie6/fastcov)
 [![PyPI Version](https://img.shields.io/pypi/v/fastcov.svg)](https://pypi.org/project/fastcov/)
 <!-- # SPDX-License-Identifier: MIT -->
