@@ -642,6 +642,10 @@ def filterExceptionalBranches(branches):
 def distillLine(line_raw, lines, branches, include_exceptional_branches):
     line_number = int(line_raw["line_number"])
     count       = int(line_raw["count"])
+    if count <  0:
+        logging.warning("Ignoring negative count found in %s.", line_raw["function_name"])
+        count = 0
+
     if line_number not in lines:
         lines[line_number] = count
     else:
