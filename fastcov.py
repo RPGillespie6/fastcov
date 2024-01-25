@@ -30,6 +30,7 @@ import argparse
 import threading
 import subprocess
 import multiprocessing
+from pathlib import Path
 
 FASTCOV_VERSION = (1,15)
 MINIMUM_PYTHON  = (3,5)
@@ -248,6 +249,30 @@ def tryParseNumber(s):
 def removeFiles(files):
     for file in files:
         os.remove(file)
+
+def processPrefix(path, prefix, prefix_strip):
+    p = Path(path)
+    if p.exists() or not p.is_absolute():
+        return path
+    
+    if prefix_strip > 0:
+        segments = p.parts
+
+        if len(segments) < prefix_strip + 1:
+            logging.warning("Couldn't strip %i path levels from %s.", prefix_strip, path)
+            return path
+        
+        segments = segments[prefix_strip+1:]
+        p = Path(segments[0])
+        segments = segments[1:]
+        for s in segments:
+            p = p.joinpath(s)
+
+    if len(prefix) > 0:
+        p = Path(prefix).joinpath(p)
+
+    return str(p)
+
 
 def getFilteredCoverageFiles(coverage_files, exclude):
     def excludeGcda(gcda):
@@ -477,10 +502,8 @@ def containsMarker(markers, strBody):
     return False
 
 # Returns whether source coverage changed or not
-def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, source_path_strip):
-    source_to_open = source
-    if source_path_strip != "":
-        source_to_open = source_to_open.replace(source_path_strip, "")
+def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip):
+    source_to_open = processPrefix(source, gcov_prefix, gcov_prefix_strip)
 
     # Before doing any work, check if this file even needs to be processed
     if not exclude_branches_sw and not include_branches_sw:
@@ -554,12 +577,12 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
     # Source coverage changed
     return True
 
-def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, source_path_strip):
+def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip):
     changed_sources = []
 
     for source in chunk:
         try:
-            if exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, source_path_strip):
+            if exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip):
                 changed_sources.append((source, fastcov_sources[source]))
         except FileNotFoundError:
             logging.error("Could not find '%s' to scan for exclusion markers...", source)
@@ -571,13 +594,13 @@ def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, includ
     # Exit current process with appropriate code
     sys.exit(EXIT_CODE)
 
-def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, exclude_line_marker, min_chunk_size, fallback_encodings, source_path_strip):
+def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, exclude_line_marker, min_chunk_size, fallback_encodings, gcov_prefix, gcov_prefix_strip):
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     processes = []
     data_q    = multiprocessing.Queue()
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, source_path_strip))
+        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip))
         processes.append(p)
         p.start()
 
@@ -595,11 +618,10 @@ def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_bra
     for changed_source in changed_sources:
         fastcov_json["sources"][changed_source[0]] = changed_source[1]
 
-def validateSources(fastcov_json, source_path_strip):
+def validateSources(fastcov_json, gcov_prefix, gcov_prefix_strip):
     logging.info("Checking if all sources exist")
     for source in fastcov_json["sources"].keys():
-        if source_path_strip != "":
-            source = source.replace(source_path_strip, "")
+        source = processPrefix(source, gcov_prefix, gcov_prefix_strip)
         if not os.path.exists(source):
             logging.error("Cannot find '{}'".format(source))
 
@@ -961,7 +983,8 @@ def parseArgs():
     parser.add_argument('-p', '--dump-statistic', dest="dump_statistic", action="store_true", help="Dump total statistic at the end")
     parser.add_argument('-v', '--version', action="version", version='%(prog)s {version}'.format(version=__version__), help="Show program's version number and exit")
 
-    parser.add_argument('-sp', '--source_path_strip', dest="source_path_strip", action="store", default="", help="Indicates a string to strip from source file paths prior to opening them.")
+    parser.add_argument('-gps', '--gcov_prefix_strip', dest="gcov_prefix_strip", action="store", default=0, type=int, help="The number of initial directory names to strip off the absolute paths in the object file.")
+    parser.add_argument('-gp', '--gcov_prefix', dest="gcov_prefix", action="store", default="", help="The prefix to add to the paths in the object file.")
 
     args = parser.parse_args()
     if not args.output:
@@ -1000,6 +1023,12 @@ def main():
     # Setup logging
     setupLogging(args.quiet, args.verbose)
 
+    if args.gcov_prefix_strip > 0:
+        os.environ["GCOV_PREFIX_STRIP"] = str(args.gcov_prefix_strip)
+
+    if len(args.gcov_prefix) > 0:
+        os.environ["GCOV_PREFIX"] = args.gcov_prefix
+
     # Get report from appropriate source
     if args.combine:
         fastcov_json = getCombineCoverage(args)
@@ -1010,7 +1039,7 @@ def main():
 
     # Scan for exclusion markers
     if not skip_exclusion_markers:
-        processExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.exclude_line_marker, args.minimum_chunk, args.fallback_encodings, args.source_path_strip)
+        processExclusionMarkers(fastcov_json, args.jobs, args.exclude_branches_sw, args.include_branches_sw, args.exclude_line_marker, args.minimum_chunk, args.fallback_encodings, args.gcov_prefix, args.gcov_prefix_strip)
         logging.info("Scanned {} source files for exclusion markers".format(len(fastcov_json["sources"])))
 
     if args.diff_file:
@@ -1018,7 +1047,7 @@ def main():
         DiffParser().filterByDiff(args.diff_file, args.diff_base_dir, fastcov_json, args.fallback_encodings)
 
     if args.validate_sources:
-        validateSources(fastcov_json, args.source_path_strip)
+        validateSources(fastcov_json, args.gcov_prefix, args.gcov_prefix_strip)
 
     # Dump to desired file format
     dumpFile(fastcov_json, args)
