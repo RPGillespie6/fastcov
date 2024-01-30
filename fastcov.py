@@ -269,7 +269,10 @@ def processPrefix(path, prefix, prefix_strip):
             p = p.joinpath(s)
 
     if len(prefix) > 0:
-        p = Path(prefix).joinpath(p)
+        if p.is_absolute():
+            p = Path(prefix).joinpath(p.relative_to('/'))
+        else:
+            p = Path(prefix).joinpath(p)
 
     return str(p)
 
