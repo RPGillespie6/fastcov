@@ -254,14 +254,14 @@ def processPrefix(path, prefix, prefix_strip):
     p = Path(path)
     if p.exists() or not p.is_absolute():
         return path
-    
+
     if prefix_strip > 0:
         segments = p.parts
 
         if len(segments) < prefix_strip + 1:
             logging.warning("Couldn't strip %i path levels from %s.", prefix_strip, path)
             return path
-        
+
         segments = segments[prefix_strip+1:]
         p = Path(segments[0])
         segments = segments[1:]
@@ -674,7 +674,10 @@ def distillLine(line_raw, lines, branches, include_exceptional_branches):
     line_number = int(line_raw["line_number"])
     count       = int(line_raw["count"])
     if count <  0:
-        logging.warning("Ignoring negative count found in %s.", line_raw["function_name"])
+        if "function_name" in line_raw:
+            logging.warning("Ignoring negative count found in %s.", line_raw["function_name"])
+        else:
+            logging.warning("Ignoring negative count.")
         count = 0
 
     if line_number not in lines:
