@@ -32,7 +32,7 @@ import subprocess
 import multiprocessing
 from pathlib import Path
 
-FASTCOV_VERSION = (1,15)
+FASTCOV_VERSION = (1,16)
 MINIMUM_PYTHON  = (3,5)
 MINIMUM_GCOV    = (9,0,0)
 
