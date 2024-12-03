@@ -792,6 +792,7 @@ def parseInfo(path):
     }
 
     with open(path) as f:
+        current_test_name = ""
         for line in f:
             if line.startswith("TN:"):
                 current_test_name = line[3:].strip()
