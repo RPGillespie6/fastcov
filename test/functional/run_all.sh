@@ -129,6 +129,10 @@ cmp combine3.actual.info ${TEST_DIR}/expected_results/combine3.expected.info
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/combine4a.info ${TEST_DIR}/expected_results/combine4b.info ${TEST_DIR}/expected_results/combine4c.info --lcov -o combine4.actual.info
 cmp combine4.actual.info ${TEST_DIR}/expected_results/combine4.expected.info
 
+# Combine operation - End line number in FN
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test1.end_line_number_fn.info --lcov -o test1.end_line_number_fn.actual.info
+cmp test1.end_line_number_fn.actual.info ${TEST_DIR}/expected_results/combine6.expected.info
+
 # Combine operation - Missing TN
 coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/test1.no_tn.info --lcov -o test1.no_tn.actual.info
 cmp test1.no_tn.actual.info ${TEST_DIR}/expected_results/combine5.expected.info

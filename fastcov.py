@@ -807,9 +807,10 @@ def parseInfo(path):
                 })
                 current_data = fastcov_json["sources"][current_sf][current_test_name]
             elif line.startswith("FN:"):
-                line_num, function_name = line[3:].strip().split(",")
+                line_nums, function_name = line[3:].strip().rsplit(",", maxsplit=1)
+                line_num_start = line_nums.split(",")[0]
                 current_data["functions"][function_name] = {}
-                current_data["functions"][function_name]["start_line"] = tryParseNumber(line_num)
+                current_data["functions"][function_name]["start_line"] = tryParseNumber(line_num_start)
             elif line.startswith("FNDA:"):
                 count, function_name = line[5:].strip().split(",")
                 current_data["functions"][function_name]["execution_count"] = tryParseNumber(count)
