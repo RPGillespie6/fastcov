@@ -56,6 +56,7 @@ EXIT_CODES = {
     "excl_not_found": 6,
     "bad_chunk_file": 7,
     "missing_json_key": 8,
+    "no_coverage_files": 9,
 }
 
 # Disable all logging in case developers are using this as a module
@@ -885,6 +886,11 @@ def getGcovCoverage(args):
         removeFiles(globCoverageFiles(args.directory, GCOV_GCDA_EXT))
         logging.info("Removed {} .gcda files".format(len(coverage_files)))
         sys.exit()
+
+    if not coverage_files:
+        logging.error("No coverage files found in directory '%s'", args.directory)
+        setExitCode("no_coverage_files")
+        sys.exit(EXIT_CODE)
 
     # Fire up one gcov per cpu and start processing gcdas
     gcov_filter_options = getGcovFilterOptions(args)
