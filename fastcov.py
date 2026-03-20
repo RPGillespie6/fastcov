@@ -1032,6 +1032,10 @@ def setupLogging(quiet, verbose):
         root.setLevel(logging.DEBUG)
 
 def main():
+    # Python 3.14+ changed the default multiprocessing start method from "fork" to "spawn" on POSIX.
+    # This causes massive slowdowns (13 times) due to pickling overhead. Workers are safe to fork (no threads exist at this point).
+    multiprocessing.set_start_method("fork")
+
     args = parseArgs()
 
     # Setup logging
