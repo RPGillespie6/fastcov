@@ -1010,15 +1010,15 @@ def parseInfo(path: str) -> FastcovReport:
 
     return fastcov_json
 
-def convertKeysToInt(report):
+def convertKeysToInt(report: FastcovReport) -> None:
     for source in report["sources"].keys():
         for test_name in report["sources"][source].keys():
             report_data = report["sources"][source][test_name]
-            report_data["lines"]    = {int(k):v for k,v in report_data["lines"].items()}
-            report_data["branches"] = {int(k):v for k,v in report_data["branches"].items()}
+            report_data["lines"] = {int(k): v for k, v in report_data["lines"].items()}
+            report_data["branches"] = {int(k): v for k, v in report_data["branches"].items()}
 
-def parseAndCombine(paths):
-    base_report = {}
+def parseAndCombine(paths: List[str]) -> Dict[str, Any]:
+    base_report: Dict[str, Any] = {}
 
     for path in paths:
         if path.endswith(".json"):
@@ -1043,13 +1043,14 @@ def parseAndCombine(paths):
 
     return base_report
 
-def getCombineCoverage(args):
+def getCombineCoverage(args: argparse.Namespace) -> FastcovReport:
     logging.info("Performing combine operation")
     fastcov_json = parseAndCombine(args.combine)
     filterFastcov(fastcov_json, args)
     return fastcov_json
 
-def getGcovCoverage(args):
+
+def getGcovCoverage(args: argparse.Namespace) -> FastcovReport:
     # Need at least python 3.5 because of use of recursive glob
     checkPythonVersion(sys.version_info[0:2])
 
@@ -1085,12 +1086,13 @@ def getGcovCoverage(args):
 
     return fastcov_json
 
-def formatCoveredItems(covered, total):
+def formatCoveredItems(covered: int, total: int) -> str:
     coverage = (covered * 100.0) / total if total > 0 else 100.0
     coverage = round(coverage, 2)
     return "{:.2f}%, {}/{}".format(coverage, covered, total)
 
-def dumpStatistic(fastcov_json):
+
+def dumpStatistic(fastcov_json: FastcovReport) -> None:
     total_lines = 0
     covered_lines = 0
     total_functions = 0
