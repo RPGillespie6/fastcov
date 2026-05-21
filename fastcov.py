@@ -957,44 +957,56 @@ def combineReports(base: Dict[str, Any], overlay: Dict[str, Any]) -> None:
                 else:
                     base_data["functions"][function]["execution_count"] += cov["execution_count"]
 
-def parseInfo(path):
+def parseInfo(path: str) -> FastcovReport:
     """Parse an lcov .info file into fastcov json."""
-    fastcov_json = {
+    fastcov_json: FastcovReport = {
         "sources": {}
     }
 
     with open(path) as f:
-        current_test_name = ""
+        current_test_name: str = ""
+        current_sf: str = ""
+        current_data: TestCoverage = {
+            "functions": {},
+            "branches": {},
+            "lines": {},
+        }
+        
         for line in f:
             if line.startswith("TN:"):
                 current_test_name = line[3:].strip()
             elif line.startswith("SF:"):
                 current_sf = line[3:].strip()
-                fastcov_json["sources"].setdefault(current_sf, {
-                    current_test_name: {
+                if current_sf not in fastcov_json["sources"]:
+                    fastcov_json["sources"][current_sf] = {}
+                if current_test_name not in fastcov_json["sources"][current_sf]:
+                    fastcov_json["sources"][current_sf][current_test_name] = {
                         "functions": {},
                         "branches": {},
                         "lines": {},
                     }
-                })
                 current_data = fastcov_json["sources"][current_sf][current_test_name]
             elif line.startswith("FN:"):
                 line_nums, function_name = line[3:].strip().rsplit(",", maxsplit=1)
                 line_num_start = line_nums.split(",")[0]
-                current_data["functions"][function_name] = {}
-                current_data["functions"][function_name]["start_line"] = tryParseNumber(line_num_start)
+                current_data["functions"][function_name] = {
+                    "start_line": tryParseNumber(line_num_start),
+                    "execution_count": 0
+                }
             elif line.startswith("FNDA:"):
                 count, function_name = line[5:].strip().split(",")
-                current_data["functions"][function_name]["execution_count"] = tryParseNumber(count)
+                if function_name in current_data["functions"]:
+                    current_data["functions"][function_name]["execution_count"] = tryParseNumber(count)
             elif line.startswith("DA:"):
                 line_num, count = line[3:].strip().split(",")
-                current_data["lines"][line_num] = tryParseNumber(count)
+                current_data["lines"][int(line_num)] = tryParseNumber(count)
             elif line.startswith("BRDA:"):
                 branch_tokens = line[5:].strip().split(",")
-                line_num, count = branch_tokens[0], branch_tokens[-1]
+                line_num = int(branch_tokens[0])
+                count = tryParseNumber(branch_tokens[-1])
                 if line_num not in current_data["branches"]:
                     current_data["branches"][line_num] = []
-                current_data["branches"][line_num].append(tryParseNumber(count))
+                current_data["branches"][line_num].append(count)
 
     return fastcov_json
 
