@@ -521,7 +521,7 @@ def filterFastcov(fastcov_json: FastcovReport, args: argparse.Namespace) -> None
         if shouldFilterSource(source, gcov_filter_options):
             del fastcov_json["sources"][source]
 
-def processGcov(cwd, gcov, source_base_dir, files, gcov_filter_options):
+def processGcov(cwd: str, gcov: Dict[str, Any], source_base_dir: str, files: List[Dict[str, Any]], gcov_filter_options: Dict[str, Any]) -> None:
     # Uses cwd if set, else source_base_dir from gcov json. If both are empty, uses "."
     base_dir = cwd if cwd else source_base_dir
     base_dir = base_dir if base_dir else "."
@@ -534,13 +534,13 @@ def processGcov(cwd, gcov, source_base_dir, files, gcov_filter_options):
     files.append(gcov)
     logging.debug("Accepted coverage for '%s'", gcov["file_abs"])
 
-def processGcovs(cwd, gcov_files, source_base_dir, gcov_filter_options):
+def processGcovs(cwd: str, gcov_files: List[Dict[str, Any]], source_base_dir: str, gcov_filter_options: Dict[str, Any]) -> List[Dict[str, Any]]:
     files = []
     for gcov in gcov_files:
         processGcov(cwd, gcov, source_base_dir, files, gcov_filter_options)
     return files
 
-def dumpBranchCoverageToLcovInfo(f, branches):
+def dumpBranchCoverageToLcovInfo(f, branches: Dict[int, List[int]]) -> None:
     branch_miss = 0
     branch_found = 0
     brda = []
