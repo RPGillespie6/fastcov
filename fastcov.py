@@ -1118,7 +1118,7 @@ def dumpStatistic(fastcov_json: FastcovReport) -> None:
     logging.info("Functions Coverage: {}".format(formatCoveredItems(covered_functions, total_functions)))
     logging.info("Lines Coverage: {}".format(formatCoveredItems(covered_lines, total_lines)))
 
-def dumpFile(fastcov_json, args):
+def dumpFile(fastcov_json: FastcovReport, args: argparse.Namespace) -> None:
     if args.lcov:
         dumpToLcovInfo(fastcov_json, args.output)
         logging.info("Created lcov info file '{}'".format(args.output))
@@ -1129,10 +1129,12 @@ def dumpFile(fastcov_json, args):
     if args.dump_statistic:
         dumpStatistic(fastcov_json)
 
-def tupleToDotted(tup):
+
+def tupleToDotted(tup: Tuple[int, ...]) -> str:
     return ".".join(map(str, tup))
 
-def parseArgs():
+
+def parseArgs() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='A parallel gcov wrapper for fast coverage report generation')
     parser.add_argument('-z', '--zerocounters', dest='zerocounters', action="store_true", help='Recursively delete all gcda files')
 
@@ -1148,12 +1150,12 @@ def parseArgs():
     parser.add_argument('-n', '--process-gcno', dest='use_gcno', action="store_true", help='Process both gcno and gcda coverage files. This option is useful for capturing untested files in the coverage report.')
 
     # Filtering Options
-    parser.add_argument('-s', '--source-files', dest='sources',     nargs="+", metavar='', default=[], help='Filter: Specify exactly which source files should be included in the final report. Paths must be either absolute or relative to current directory.')
-    parser.add_argument('-e', '--exclude',      dest='excludepost', nargs="+", metavar='', default=[], help='Filter: Exclude source files from final report if they contain one of the provided substrings (i.e. /usr/include test/, etc.)')
+    parser.add_argument('-s', '--source-files', dest='sources', nargs="+", metavar='', default=[], help='Filter: Specify exactly which source files should be included in the final report. Paths must be either absolute or relative to current directory.')
+    parser.add_argument('-e', '--exclude', dest='excludepost', nargs="+", metavar='', default=[], help='Filter: Exclude source files from final report if they contain one of the provided substrings (i.e. /usr/include test/, etc.)')
     parser.add_argument('-eg', '--exclude-glob', dest='excludepost_glob', nargs="+", metavar='', default=[], help='Filter: Exclude source files by glob pattern from final report if they contain one of the provided substrings (i.e. /usr/include test/, etc.)')
-    parser.add_argument('-i', '--include',      dest='includepost', nargs="+", metavar='', default=[], help='Filter: Only include source files in final report that contain one of the provided substrings (i.e. src/ etc.)')
-    parser.add_argument('-f', '--gcda-files',   dest='coverage_files',  nargs="+", metavar='', default=[], help='Filter: Specify exactly which gcda or gcno files should be processed. Note that specifying gcno causes both gcno and gcda to be processed.')
-    parser.add_argument('-E', '--exclude-gcda', dest='excludepre',  nargs="+", metavar='', default=[], help='Filter: Exclude gcda or gcno files from being processed via simple find matching (not regex)')
+    parser.add_argument('-i', '--include', dest='includepost', nargs="+", metavar='', default=[], help='Filter: Only include source files in final report that contain one of the provided substrings (i.e. src/ etc.)')
+    parser.add_argument('-f', '--gcda-files', dest='coverage_files', nargs="+", metavar='', default=[], help='Filter: Specify exactly which gcda or gcno files should be processed. Note that specifying gcno causes both gcno and gcda to be processed.')
+    parser.add_argument('-E', '--exclude-gcda', dest='excludepre', nargs="+", metavar='', default=[], help='Filter: Exclude gcda or gcno files from being processed via simple find matching (not regex)')
     parser.add_argument('-u', '--diff-filter', dest='diff_file', default='', help='Unified diff file with changes which will be included into final report')
     parser.add_argument('-ub', '--diff-base-dir', dest='diff_base_dir', default='', help='Base directory for sources in unified diff file, usually repository dir')
     parser.add_argument('-ce', '--custom-exclusion-marker', dest='exclude_line_marker', nargs="+", metavar='', default=["LCOV_EXCL_LINE"], help='Filter: Add filter for lines that will be excluded from coverage (same behavior as "LCOV_EXCL_LINE")')
@@ -1165,17 +1167,17 @@ def parseArgs():
                                                                                             This needs to be set if invoking fastcov from somewhere other than the base compiler directory. No need to set it if gcc version > 9.1')
 
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help='Number of parallel gcov to spawn (default: {}).'.format(multiprocessing.cpu_count()))
-    parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5,    help='Minimum number of files a thread should process (default: 5). \
+    parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5). \
                                                                                                           If you have only 4 gcda files but they are monstrously huge, you could change this value to a 1 so that each thread will only process 1 gcda. Otherwise fastcov will spawn only 1 thread to process all of them.')
 
     parser.add_argument('-F', '--fallback-encodings', dest='fallback_encodings', nargs="+", metavar='', default=[], help='List of encodings to try if opening a source file with the default fails (i.e. latin1, etc.). This option is not usually needed.')
 
-    parser.add_argument('-l', '--lcov',   dest='lcov',   action="store_true",     help='Output in lcov info format instead of fastcov json')
+    parser.add_argument('-l', '--lcov', dest='lcov', action="store_true", help='Output in lcov info format instead of fastcov json')
     parser.add_argument('-o', '--output', dest='output', default="", help='Name of output file (default: coverage.json or coverage.info, depends on --lcov option)')
-    parser.add_argument('-q', '--quiet',  dest='quiet',  action="store_true",     help='Suppress output to stdout')
+    parser.add_argument('-q', '--quiet', dest='quiet', action="store_true", help='Suppress output to stdout')
 
-    parser.add_argument('-t', '--test-name',     dest='test_name', default="", help='Specify a test name for the coverage. Equivalent to lcov\'s `-t`.')
-    parser.add_argument('-C', '--add-tracefile', dest='combine',   nargs="+",  help='Combine multiple coverage files into one. If this flag is specified, fastcov will do a combine operation instead invoking gcov. Equivalent to lcov\'s `-a`.')
+    parser.add_argument('-t', '--test-name', dest='test_name', default="", help='Specify a test name for the coverage. Equivalent to lcov\'s `-t`.')
+    parser.add_argument('-C', '--add-tracefile', dest='combine', nargs="+", help='Combine multiple coverage files into one. If this flag is specified, fastcov will do a combine operation instead invoking gcov. Equivalent to lcov\'s `-a`.')
 
     parser.add_argument('-V', '--verbose', dest="verbose", action="store_true", help="Print more detailed information about what fastcov is doing")
     parser.add_argument('-w', '--validate-sources', dest="validate_sources", action="store_true", help="Check if every source file exists")
@@ -1190,19 +1192,21 @@ def parseArgs():
         args.output = 'coverage.info' if args.lcov else 'coverage.json'
     return args
 
-def checkPythonVersion(version):
+def checkPythonVersion(version: Tuple[int, int]) -> None:
     """Exit if the provided python version is less than the supported version."""
     if version < MINIMUM_PYTHON:
         sys.stderr.write("Minimum python version {} required, found {}\n".format(tupleToDotted(MINIMUM_PYTHON), tupleToDotted(version)))
         sys.exit(EXIT_CODES["python_version"])
 
-def checkGcovVersion(version):
+
+def checkGcovVersion(version: Tuple[int, ...]) -> None:
     """Exit if the provided gcov version is less than the supported version."""
     if version < MINIMUM_GCOV:
         sys.stderr.write("Minimum gcov version {} required, found {}\n".format(tupleToDotted(MINIMUM_GCOV), tupleToDotted(version)))
         sys.exit(EXIT_CODES["gcov_version"])
 
-def setupLogging(quiet, verbose):
+
+def setupLogging(quiet: bool, verbose: bool) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(FastcovFormatter("[%(levelname)s]: %(message)s"))
 
@@ -1211,12 +1215,13 @@ def setupLogging(quiet, verbose):
     root.addHandler(handler)
 
     if not quiet:
-        logging.disable(level=logging.NOTSET) # Re-enable logging
+        logging.disable(level=logging.NOTSET)  # Re-enable logging
 
     if verbose:
         root.setLevel(logging.DEBUG)
 
-def main():
+
+def main() -> None:
     # Python 3.14+ changed the default multiprocessing start method from "fork" to "spawn" on POSIX.
     # This causes massive slowdowns (13 times) due to pickling overhead. Workers are safe to fork (no threads exist at this point).
     multiprocessing.set_start_method("fork")
@@ -1259,8 +1264,9 @@ def main():
     if EXIT_CODE:
         sys.exit(EXIT_CODE)
 
+
 # Set package version... it's way down here so that we can call tupleToDotted
-__version__ = tupleToDotted(FASTCOV_VERSION)
+__version__: str = tupleToDotted(FASTCOV_VERSION)
 
 if __name__ == '__main__':
     main()
