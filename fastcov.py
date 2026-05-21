@@ -555,7 +555,7 @@ def dumpBranchCoverageToLcovInfo(f, branches: Dict[int, List[int]]) -> None:
     f.write("BRF:{}\n".format(branch_found))                # Branches Found
     f.write("BRH:{}\n".format(branch_found - branch_miss))  # Branches Hit
 
-def dumpToLcovInfo(fastcov_json, output):
+def dumpToLcovInfo(fastcov_json: FastcovReport, output: str) -> None:
     with open(output, "w") as f:
         sources = fastcov_json["sources"]
         for sf in sorted(sources.keys()):
@@ -565,8 +565,8 @@ def dumpToLcovInfo(fastcov_json, output):
                 f.write("SF:{}\n".format(sf)) #Source File
 
                 fn_miss = 0
-                fn = []
-                fnda = []
+                fn: List[Tuple[int, str]] = []
+                fnda: List[Tuple[int, str]] = []
                 for function, fdata in data["functions"].items():
                     fn.append((fdata["start_line"], function))  # Function Start Line
                     fnda.append((fdata["execution_count"], function))  # Function Hits
@@ -583,7 +583,7 @@ def dumpToLcovInfo(fastcov_json, output):
                     dumpBranchCoverageToLcovInfo(f, data["branches"])
 
                 line_miss = 0
-                da = []
+                da: List[Tuple[int, int]] = []
                 for line_num, count in data["lines"].items():
                     da.append((line_num, count))
                     line_miss += int(count == 0)
@@ -593,7 +593,7 @@ def dumpToLcovInfo(fastcov_json, output):
                 f.write("LH:{}\n".format((len(data["lines"]) - line_miss)))   #Lines Hit
                 f.write("end_of_record\n")
 
-def getSourceLines(source, fallback_encodings=[]):
+def getSourceLines(source: str, fallback_encodings: List[str] = []) -> List[str]:
     """Return a list of lines from the provided source, trying to decode with fallback encodings if the default fails."""
     default_encoding = sys.getdefaultencoding()
     for encoding in [default_encoding] + fallback_encodings:
@@ -607,14 +607,25 @@ def getSourceLines(source, fallback_encodings=[]):
     with open(source, errors="ignore") as f:
         return f.readlines()
 
-def containsMarker(markers, strBody):
+
+def containsMarker(markers: List[str], strBody: str) -> bool:
     for marker in markers:
         if marker in strBody:
             return True
     return False
 
+
 # Returns whether source coverage changed or not
-def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip):
+def exclProcessSource(
+    fastcov_sources: Dict[str, Dict[str, TestCoverage]],
+    source: str,
+    exclude_branches_sw: List[str],
+    include_branches_sw: List[str],
+    exclude_line_marker: List[str],
+    fallback_encodings: List[str],
+    gcov_prefix: str,
+    gcov_prefix_strip: int
+) -> bool:
     source_to_open = processPrefix(source, gcov_prefix, gcov_prefix_strip)
 
     # Before doing any work, check if this file even needs to be processed
@@ -646,7 +657,7 @@ def exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_bran
                 continue
 
             # Build line to function dict so can quickly delete by line number
-            line_to_func = {}
+            line_to_func: Dict[int, Set[str]] = {}
             for f in fastcov_data["functions"].keys():
                 l = fastcov_data["functions"][f]["start_line"]
                 if l not in line_to_func:
