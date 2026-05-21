@@ -18,6 +18,9 @@
         $ ./fastcov.py --exclude /usr/include test/ --lcov -o report.info
         $ genhtml -o code_coverage report.info
 """
+
+from __future__ import annotations
+
 import re
 import os
 import sys
@@ -27,29 +30,47 @@ import time
 import fnmatch
 import logging
 import argparse
-import threading
 import subprocess
 import multiprocessing
 from pathlib import Path
+from typing import Any, Dict, List, Set, Tuple, TypedDict
 
-FASTCOV_VERSION = (1,17)
-MINIMUM_PYTHON  = (3,5)
-MINIMUM_GCOV    = (9,0,0)
+
+# ==================== Type Definitions ====================
+
+class FunctionData(TypedDict):
+    start_line: int
+    execution_count: int
+
+
+class TestCoverage(TypedDict):
+    functions: Dict[str, FunctionData]
+    branches: Dict[int, List[int]]
+    lines: Dict[int, int]
+
+
+class FastcovReport(TypedDict):
+    sources: Dict[str, Dict[str, TestCoverage]]
+
+
+# ==================== Globals ====================
+
+FASTCOV_VERSION: Tuple[int, int] = (1, 17)
+MINIMUM_PYTHON: Tuple[int, int] = (3, 5)
+MINIMUM_GCOV: Tuple[int, int, int] = (9, 0, 0)
 
 # Interesting metrics
-START_TIME    = time.monotonic()
-GCOVS_TOTAL   = 0
-GCOVS_SKIPPED = 0
+START_TIME: float = time.monotonic()
+GCOVS_TOTAL: int = 0
+GCOVS_SKIPPED: int = 0
 
 # Gcov Coverage File Extensions
-GCOV_GCNO_EXT = ".gcno" # gcno = "[gc]ov [no]te"
-GCOV_GCDA_EXT = ".gcda" # gcda = "[gc]ov [da]ta"
+GCOV_GCNO_EXT: str = ".gcno"  # gcno = "[gc]ov [no]te"
+GCOV_GCDA_EXT: str = ".gcda"  # gcda = "[gc]ov [da]ta"
 
 # For when things go wrong...
-# Start error codes at 3 because 1-2 are special
-# See https://stackoverflow.com/a/1535733/2516916
-EXIT_CODE  = 0
-EXIT_CODES = {
+EXIT_CODE: int = 0
+EXIT_CODES: Dict[str, int] = {
     "gcov_version": 3,
     "python_version": 4,
     "unsupported_coverage_format": 5,
@@ -62,32 +83,38 @@ EXIT_CODES = {
 # Disable all logging in case developers are using this as a module
 logging.disable(level=logging.CRITICAL)
 
+
 class FastcovFormatter(logging.Formatter):
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         record.levelname = record.levelname.lower()
-        log_message = super(FastcovFormatter, self).format(record)
-        return "[{:.3f}s] {}".format(stopwatch(), log_message)
+        log_message = super().format(record)
+        return f"[{stopwatch():.3f}s] {log_message}"
+
 
 class DiffParseError(Exception):
+    """Custom exception for errors while parsing diff files."""
     pass
 
-class DiffParser(object):
-    def _refinePaths(self, diff_metadata, diff_base_dir):
+
+class DiffParser:
+    """Parser for unified diff files to support --diff-filter option."""
+
+    def _refinePaths(self, diff_metadata: Dict[str, Set[int]], diff_base_dir: str) -> None:
         diff_metadata.pop('/dev/null', None)
         diff_metadata.pop('', None)
-        for key, value in diff_metadata.copy().items():
+        for key, value in list(diff_metadata.items()):
             diff_metadata.pop(key)
-            #sources without added lines will be excluded
+            # sources without added lines will be excluded
             if value:
                 newpath = os.path.join(diff_base_dir, key) if diff_base_dir else os.path.abspath(key)
                 diff_metadata[newpath] = value
 
-    def _parseTargetFile(self, line_with_target_file):
-        #f.e. '+++ b/README.md1' or '+++ b/README.md1   timestamp'
+    def _parseTargetFile(self, line_with_target_file: str) -> str:
+        # f.e. '+++ b/README.md1' or '+++ b/README.md1   timestamp'
         target_source = line_with_target_file[4:].partition('\t')[0].strip()
         target_source = target_source[2:] if target_source.startswith('b/') else target_source
         return target_source
-
+    
     def _parseHunkBoundaries(self, line_with_hunk_boundaries, line_index):
         #f.e. '@@ -121,4 +122,4 @@ Time to process all gcda and parse all gcov:'
         # Here ['-121,4', '+122,4']
