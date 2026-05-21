@@ -33,6 +33,7 @@ import argparse
 import subprocess
 import multiprocessing
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Dict, List, Set, Tuple, TypedDict
 
 
@@ -248,43 +249,51 @@ class DiffParser:
                      excluded_files_count, excluded_lines_count)
         return fastcov_json
 
-def chunks(l, n):
+def chunks(l: List[Any], n: int) -> Iterable[List[Any]]:
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
         yield l[i:i + n]
 
-def setExitCode(key):
+
+def setExitCode(key: str) -> None:
+    """Set global exit code using a named key."""
     global EXIT_CODE
     EXIT_CODE = EXIT_CODES[key]
 
-def setExitCodeRaw(code):
+
+def setExitCodeRaw(code: int) -> None:
+    """Set global exit code directly with a raw integer."""
     global EXIT_CODE
     EXIT_CODE = code
 
-def incrementCounters(total, skipped):
-    global GCOVS_TOTAL
-    global GCOVS_SKIPPED
-    GCOVS_TOTAL   += total
+
+def incrementCounters(total: int, skipped: int) -> None:
+    """Increment global counters for processed gcov files."""
+    global GCOVS_TOTAL, GCOVS_SKIPPED
+    GCOVS_TOTAL += total
     GCOVS_SKIPPED += skipped
 
-def stopwatch():
+
+def stopwatch() -> float:
     """Return number of seconds since last time this was called."""
     global START_TIME
-    end_time   = time.monotonic()
-    delta      = end_time - START_TIME
+    end_time = time.monotonic()
+    delta = end_time - START_TIME
     START_TIME = end_time
     return delta
 
-def parseVersionFromLine(version_str):
+
+def parseVersionFromLine(version_str: str) -> Tuple[int, ...]:
     """Given a string containing a dotted integer version, parse out integers and return as tuple."""
     version = re.search(r'(\d+\.\d+\.\d+)', version_str)
 
     if not version:
-        return (0,0,0)
+        return (0, 0, 0)
 
     return tuple(map(int, version.group(1).split(".")))
 
-def getGcovVersion(gcov):
+
+def getGcovVersion(gcov: str) -> Tuple[int, ...]:
     p = subprocess.Popen([gcov, "-v"], stdout=subprocess.PIPE)
     output = p.communicate()[0].decode('UTF-8')
     p.wait()
