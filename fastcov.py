@@ -823,10 +823,15 @@ def filterExceptionalBranches(branches: List[Dict[str, Any]]) -> List[Dict[str, 
 
     return filtered_branches
 
-def distillLine(line_raw, lines, branches, include_exceptional_branches):
+def distillLine(
+    line_raw: Dict[str, Any],
+    lines: Dict[int, int],
+    branches: Dict[int, List[int]],
+    include_exceptional_branches: bool
+) -> None:
     line_number = int(line_raw["line_number"])
-    count       = int(line_raw["count"])
-    if count <  0:
+    count = int(line_raw["count"])
+    if count < 0:
         if "function_name" in line_raw:
             logging.warning("Ignoring negative count found in '%s'.", line_raw["function_name"])
         else:
@@ -852,7 +857,12 @@ def distillLine(line_raw, lines, branches, include_exceptional_branches):
             branches[line_number] += [0] * (glen - blen)
         branches[line_number][i] += int(branch["count"])
 
-def distillSource(source_raw, sources, test_name, include_exceptional_branches):
+def distillSource(
+    source_raw: Dict[str, Any],
+    sources: Dict[str, Dict[str, TestCoverage]],
+    test_name: str,
+    include_exceptional_branches: bool
+) -> None:
     source_name = source_raw["file_abs"]
     if source_name not in sources:
         sources[source_name] = {
@@ -867,24 +877,31 @@ def distillSource(source_raw, sources, test_name, include_exceptional_branches):
         distillFunction(function, sources[source_name][test_name]["functions"])
 
     for line in source_raw["lines"]:
-        distillLine(line, sources[source_name][test_name]["lines"], sources[source_name][test_name]["branches"], include_exceptional_branches)
+        distillLine(
+            line,
+            sources[source_name][test_name]["lines"],
+            sources[source_name][test_name]["branches"],
+            include_exceptional_branches
+        )
 
-def dumpToJson(intermediate, output):
+
+def dumpToJson(intermediate: Dict[str, Any], output: str) -> None:
     with open(output, "w") as f:
         json.dump(intermediate, f)
 
-def getGcovFilterOptions(args):
+
+def getGcovFilterOptions(args: argparse.Namespace) -> Dict[str, Any]:
     return {
-        "sources": set([os.path.abspath(s) for s in args.sources]), #Make paths absolute, use set for fast lookups
+        "sources": set([os.path.abspath(s) for s in args.sources]),  # Make paths absolute, use set for fast lookups
         "include": args.includepost,
         "exclude": args.excludepost,
-        "exclude_glob":args.excludepost_glob
+        "exclude_glob": args.excludepost_glob
     }
 
-def addDicts(dict1, dict2):
+def addDicts(dict1: Dict[Any, int], dict2: Dict[Any, int]) -> Dict[Any, int]:
     """Add dicts together by value. i.e. addDicts({"a":1,"b":0}, {"a":2}) == {"a":3,"b":0}."""
-    result = {k:v for k,v in dict1.items()}
-    for k,v in dict2.items():
+    result = {k: v for k, v in dict1.items()}
+    for k, v in dict2.items():
         if k in result:
             result[k] += v
         else:
@@ -892,7 +909,8 @@ def addDicts(dict1, dict2):
 
     return result
 
-def addLists(list1, list2):
+
+def addLists(list1: List[int], list2: List[int]) -> List[int]:
     """Add lists together by value. i.e. addLists([1,1], [2,2]) == [3,3]."""
     # Find big list and small list
     blist, slist = list(list2), list(list1)
@@ -905,7 +923,8 @@ def addLists(list1, list2):
 
     return blist
 
-def combineReports(base, overlay):
+
+def combineReports(base: Dict[str, Any], overlay: Dict[str, Any]) -> None:
     for source, scov in overlay["sources"].items():
         # Combine Source Coverage
         if source not in base["sources"]:
