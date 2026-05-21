@@ -114,67 +114,73 @@ class DiffParser:
         target_source = line_with_target_file[4:].partition('\t')[0].strip()
         target_source = target_source[2:] if target_source.startswith('b/') else target_source
         return target_source
-    
-    def _parseHunkBoundaries(self, line_with_hunk_boundaries, line_index):
-        #f.e. '@@ -121,4 +122,4 @@ Time to process all gcda and parse all gcov:'
-        # Here ['-121,4', '+122,4']
+
+    def _parseHunkBoundaries(self, line_with_hunk_boundaries: str, line_index: int) -> Tuple[int, int, int, int]:
+        # f.e. '@@ -121,4 +122,4 @@ ...'
         lines_info = line_with_hunk_boundaries[3:].partition("@@")[0].strip().split(' ')
         if len(lines_info) != 2:
-            raise DiffParseError("Found invalid hunk. Line #{}. {}".format(line_index, line_with_hunk_boundaries))
-        # Here ['122','4']
+            raise DiffParseError(f"Found invalid hunk. Line #{line_index}. {line_with_hunk_boundaries}")
+
+        # Target lines info
         target_lines_info = lines_info[1].strip('+').partition(',')
         target_line_current = int(target_lines_info[0])
         target_lines_count = int(target_lines_info[2]) if target_lines_info[2] else 1
 
-        # Here ['121','4']
+        # Source lines info
         source_lines_info = lines_info[0].strip('-').partition(',')
         source_line_current = int(source_lines_info[0])
         source_lines_count = int(source_lines_info[2]) if source_lines_info[2] else 1
+
         return target_line_current, target_lines_count, source_line_current, source_lines_count
 
-    def parseDiffFile(self, diff_file, diff_base_dir, fallback_encodings=[]):
-        diff_metadata = {}
-        target_source = None
-        target_hunk = set()
+    def parseDiffFile(
+        self,
+        diff_file: str,
+        diff_base_dir: str,
+        fallback_encodings: List[str] | None = None
+    ) -> Dict[str, Set[int]]:
+        if fallback_encodings is None:
+            fallback_encodings = []
+
+        diff_metadata: Dict[str, Set[int]] = {}
+        target_source: str | None = None
+        target_hunk: Set[int] = set()
         target_line_current = 0
         target_line_end = 0
         source_line_current = 0
         source_line_end = 0
         found_hunk = False
+
         for i, line in enumerate(getSourceLines(diff_file, fallback_encodings), 1):
             line = line.rstrip()
+
             if not found_hunk:
                 if line.startswith('+++ '):
-                    # refresh file
                     target_source = self._parseTargetFile(line)
                 elif line.startswith('@@ '):
-                    # refresh hunk
-                    target_line_current, target_lines_count, source_line_current, source_lines_count =  self._parseHunkBoundaries(line, i)
+                    (target_line_current, target_lines_count,
+                     source_line_current, source_lines_count) = self._parseHunkBoundaries(line, i)
                     target_line_end = target_line_current + target_lines_count
                     source_line_end = source_line_current + source_lines_count
                     target_hunk = set()
                     found_hunk = True
                 continue
+
             if target_line_current > target_line_end or source_line_current > source_line_end:
-                raise DiffParseError("Hunk longer than expected. Line #{}. {}".format(i, line))
+                raise DiffParseError(f"Hunk longer than expected. Line #{i}. {line}")
 
             if line.startswith('+'):
-                #line related to target
                 target_hunk.add(target_line_current)
-                target_line_current = target_line_current + 1
+                target_line_current += 1
             elif line.startswith(' ') or line == '':
-                # line related to both
-                target_line_current = target_line_current + 1
-                source_line_current = source_line_current + 1
+                target_line_current += 1
+                source_line_current += 1
             elif line.startswith('-'):
-                # line related to source
-                source_line_current = source_line_current + 1
+                source_line_current += 1
             elif not line.startswith('\\'):  # No newline at end of file
-                # line with newline marker is not included into any boundaries
-                raise DiffParseError("Found unrecognized hunk line type. Line #{}. {}".format(i, line))
+                raise DiffParseError(f"Found unrecognized hunk line type. Line #{i}. {line}")
 
             if target_line_current == target_line_end and source_line_current == source_line_end:
-                # Checked all lines, save data
                 if target_source in diff_metadata:
                     diff_metadata[target_source] = target_hunk.union(diff_metadata[target_source])
                 else:
@@ -183,42 +189,63 @@ class DiffParser:
                 found_hunk = False
 
         if target_line_current != target_line_end or source_line_current != source_line_end:
-            raise DiffParseError("Unexpected end of file. Expected hunk with {} target lines, {} source lines".format(
-                target_line_end - target_line_current, source_line_end - source_line_current))
+            raise DiffParseError(
+                f"Unexpected end of file. Expected hunk with {target_line_end - target_line_current} "
+                f"target lines, {source_line_end - source_line_current} source lines"
+            )
 
         self._refinePaths(diff_metadata, diff_base_dir)
         return diff_metadata
 
-    def filterByDiff(self, diff_file, dir_base_dir, fastcov_json, fallback_encodings=[]):
-        diff_metadata = self.parseDiffFile(diff_file, dir_base_dir, fallback_encodings)
-        logging.debug("Include only next files: {}".format(diff_metadata.keys()))
+    def filterByDiff(
+        self,
+        diff_file: str,
+        diff_base_dir: str,
+        fastcov_json: FastcovReport,
+        fallback_encodings: List[str] | None = None
+    ) -> FastcovReport:
+        if fallback_encodings is None:
+            fallback_encodings = []
+
+        diff_metadata = self.parseDiffFile(diff_file, diff_base_dir, fallback_encodings)
+
+        logging.debug("Include only next files: %s", list(diff_metadata.keys()))
+
         excluded_files_count = 0
         excluded_lines_count = 0
+
         for source in list(fastcov_json["sources"].keys()):
-            diff_lines = diff_metadata.get(source, None)
+            diff_lines = diff_metadata.get(source)
             if not diff_lines:
-                excluded_files_count = excluded_files_count + 1
-                logging.debug("Exclude {} according to diff file".format(source))
+                excluded_files_count += 1
+                logging.debug("Exclude %s according to diff file", source)
                 fastcov_json["sources"].pop(source)
                 continue
-            for test_name, report_data in fastcov_json["sources"][source].copy().items():
-                #No info about functions boundaries, removing all
+
+            for test_name, report_data in list(fastcov_json["sources"][source].items()):
+                # No info about functions boundaries, removing all
                 for function in list(report_data["functions"].keys()):
                     report_data["functions"].pop(function, None)
+
                 for line in list(report_data["lines"].keys()):
                     if line not in diff_lines:
-                        excluded_lines_count = excluded_lines_count + 1
+                        excluded_lines_count += 1
                         report_data["lines"].pop(line)
+
                 for branch_line in list(report_data["branches"].keys()):
                     if branch_line not in diff_lines:
                         report_data["branches"].pop(branch_line)
+
                 if len(report_data["lines"]) == 0:
                     fastcov_json["sources"][source].pop(test_name)
+
             if len(fastcov_json["sources"][source]) == 0:
-                excluded_files_count = excluded_files_count + 1
-                logging.debug('Exclude {} file as it has no lines due to diff filter'.format(source))
+                excluded_files_count += 1
+                logging.debug("Exclude %s file as it has no lines due to diff filter", source)
                 fastcov_json["sources"].pop(source)
-        logging.info("Excluded {} files and {} lines according to diff file".format(excluded_files_count, excluded_lines_count))
+
+        logging.info("Excluded %d files and %d lines according to diff file",
+                     excluded_files_count, excluded_lines_count)
         return fastcov_json
 
 def chunks(l, n):
