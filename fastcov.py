@@ -381,21 +381,33 @@ def findCoverageFiles(
     logging.debug("Coverage files found:\n    %s", "\n    ".join(coverage_files))
     return coverage_files
 
-def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
-    base_report   = {"sources": {}}
-    gcovs_total   = 0
+def gcovWorker(
+    data_q: multiprocessing.Queue,
+    metrics_q: multiprocessing.Queue,
+    args: argparse.Namespace,
+    chunk: List[str],
+    gcov_filter_options: Dict[str, Any]
+) -> None:
+    """Worker process that runs gcov on a chunk of files and returns coverage data."""
+    base_report: Dict[str, Any] = {"sources": {}}
+    gcovs_total = 0
     gcovs_skipped = 0
-    error_exit    = False
 
     gcov_bin = args.gcov
     gcov_args = ["--json-format", "--stdout"]
-    if args.branchcoverage or args.xbranchcoverage:
+    if getattr(args, 'branchcoverage', False) or getattr(args, 'xbranchcoverage', False):
         gcov_args.append("--branch-probabilities")
 
     encoding = sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'
-    workdir  = args.cdirectory if args.cdirectory else "."
+    workdir = args.cdirectory if args.cdirectory else "."
 
-    p = subprocess.Popen([gcov_bin] + gcov_args + chunk, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    p = subprocess.Popen(
+        [gcov_bin] + gcov_args + chunk,
+        cwd=workdir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL
+    )
+
     for i, line in enumerate(iter(p.stdout.readline, b'')):
         try:
             intermediate_json = json.loads(line.decode(encoding))
@@ -410,10 +422,17 @@ def gcovWorker(data_q, metrics_q, args, chunk, gcov_filter_options):
             setExitCode("missing_json_key")
             continue
 
-        intermediate_json_files = processGcovs(args.cdirectory, intermediate_json["files"], intermediate_json["current_working_directory"], gcov_filter_options)
+        intermediate_json_files = processGcovs(
+            args.cdirectory,
+            intermediate_json["files"],
+            intermediate_json["current_working_directory"],
+            gcov_filter_options
+        )
+
         for f in intermediate_json_files:
-            distillSource(f, base_report["sources"], args.test_name, args.xbranchcoverage)
-        gcovs_total   += len(intermediate_json["files"])
+            distillSource(f, base_report["sources"], args.test_name, getattr(args, 'xbranchcoverage', False))
+
+        gcovs_total += len(intermediate_json["files"])
         gcovs_skipped += len(intermediate_json["files"]) - len(intermediate_json_files)
 
     p.wait()
