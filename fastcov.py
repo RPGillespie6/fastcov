@@ -441,18 +441,28 @@ def gcovWorker(
 
     sys.exit(EXIT_CODE)
 
-def processGcdas(args, coverage_files, gcov_filter_options):
+def processGcdas(
+    args: argparse.Namespace,
+    coverage_files: List[str],
+    gcov_filter_options: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Spawn multiple gcovWorker processes in parallel and combine their results."""
     chunk_size = max(args.minimum_chunk, int(len(coverage_files) / args.jobs) + 1)
 
     processes = []
-    data_q    = multiprocessing.Queue()
-    metrics_q = multiprocessing.Queue()
+    data_q: multiprocessing.Queue = multiprocessing.Queue()
+    metrics_q: multiprocessing.Queue = multiprocessing.Queue()
+
     for chunk in chunks(coverage_files, chunk_size):
-        p = multiprocessing.Process(target=gcovWorker, args=(data_q, metrics_q, args, chunk, gcov_filter_options))
+        p = multiprocessing.Process(
+            target=gcovWorker,
+            args=(data_q, metrics_q, args, chunk, gcov_filter_options)
+        )
         processes.append(p)
         p.start()
 
-    logging.info("Spawned {} gcov processes, each processing at most {} coverage files".format(len(processes), chunk_size))
+    logging.info("Spawned {} gcov processes, each processing at most {} coverage files".format(
+        len(processes), chunk_size))
 
     fastcov_jsons = []
     for p in processes:
@@ -464,14 +474,15 @@ def processGcdas(args, coverage_files, gcov_filter_options):
         if p.exitcode != 0:
             setExitCodeRaw(p.exitcode)
 
+    # Combine all results
     base_fastcov = fastcov_jsons.pop()
     for fj in fastcov_jsons:
         combineReports(base_fastcov, fj)
 
     return base_fastcov
 
-def shouldFilterSource(source, gcov_filter_options):
-    """Returns true if the provided source file should be filtered due to CLI options, otherwise returns false."""
+def shouldFilterSource(source: str, gcov_filter_options: Dict[str, Any]) -> bool:
+    """Returns true if the provided source file should be filtered due to CLI options."""
     # If explicit sources were passed, check for match
     if gcov_filter_options["sources"]:
         if source not in gcov_filter_options["sources"]:
@@ -484,7 +495,7 @@ def shouldFilterSource(source, gcov_filter_options):
             logging.debug("Filtering coverage for '%s' due to option '--exclude %s'", source, ex)
             return True
 
-    # Check exclude filter
+    # Check exclude-glob filter
     for ex_glob in gcov_filter_options["exclude_glob"]:
         if fnmatch.fnmatch(source, ex_glob):
             logging.debug("Filtering coverage for '%s' due to option '--exclude-glob %s'", source, ex_glob)
@@ -492,21 +503,20 @@ def shouldFilterSource(source, gcov_filter_options):
 
     # Check include filter
     if gcov_filter_options["include"]:
-        included = False
-        for inc in gcov_filter_options["include"]:
-            if inc in source:
-                included = True
-                break
-
+        included = any(inc in source for inc in gcov_filter_options["include"])
         if not included:
-            logging.debug("Filtering coverage for '%s' due to option '--include %s'", source, " ".join(gcov_filter_options["include"]))
+            logging.debug("Filtering coverage for '%s' due to option '--include %s'",
+                          source, " ".join(gcov_filter_options["include"]))
             return True
 
     return False
 
-def filterFastcov(fastcov_json, args):
+
+def filterFastcov(fastcov_json: FastcovReport, args: argparse.Namespace) -> None:
+    """Apply all source file filtering options (--include, --exclude, --source-files, etc.)."""
     logging.info("Performing filtering operations (if applicable)")
     gcov_filter_options = getGcovFilterOptions(args)
+
     for source in list(fastcov_json["sources"].keys()):
         if shouldFilterSource(source, gcov_filter_options):
             del fastcov_json["sources"][source]
