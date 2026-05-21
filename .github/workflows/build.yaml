@@ -6,11 +6,28 @@ jobs:
   Test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Pull Docker Image
         run: docker pull rpgillespie6/fastcov
       - name: Run Tests
         run: docker run -v "$PWD":/mnt/workspace -w /mnt/workspace rpgillespie6/fastcov bash -c "cd ./test && ./run_tests.sh"
       - name: Upload Coverage
         run: bash <(curl -s https://codecov.io/bash) -X gcov -X coveragepy -f test/functional/cmake_project/build/coverage.xml -f test/unit/coverage.xml
-        
+
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install mypy
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy
+
+      - name: Run mypy type checker
+        run: mypy fastcov.py --config-file pyproject.toml
