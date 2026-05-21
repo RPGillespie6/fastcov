@@ -428,7 +428,7 @@ def findCoverageFiles(
         coverage_files = globCoverageFiles(cwd, coverage_type)
 
     logging.info(f"Found {len(coverage_files)} coverage files ({coverage_type})")
-    logging.debug(f"Coverage files found:\n    {'\n    '.join(coverage_files)}")
+    logging.debug("Coverage files found:\n    %s", "\n    ".join(coverage_files))
     return coverage_files
 
 
@@ -1163,7 +1163,11 @@ def getGcovCoverage(args: argparse.Namespace) -> FastcovReport:
 
     # Summarize processing results
     logging.info(f"Processed {GCOVS_TOTAL - GCOVS_SKIPPED} .gcov files ({GCOVS_TOTAL} total, {GCOVS_SKIPPED} skipped)")
-    logging.debug(f"Final report will contain coverage for the following {len(fastcov_json['sources'])} source files:\n    {'\n    '.join(fastcov_json['sources'])}")
+    logging.debug(
+    "Final report will contain coverage for the following %d source files:\n    %s",
+    len(fastcov_json['sources']),
+    "\n    ".join(fastcov_json['sources'])
+)
 
     return fastcov_json
 
