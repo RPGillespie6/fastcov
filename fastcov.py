@@ -299,22 +299,26 @@ def getGcovVersion(gcov: str) -> Tuple[int, ...]:
     p.wait()
     return parseVersionFromLine(output.split("\n")[0])
 
-def tryParseNumber(s):
+def tryParseNumber(s: str) -> int:
+    """Try to parse a string as integer, return 0 on failure (with warning)."""
     try:
         return int(s)
     except ValueError:
         # Log a warning if not hyphen
         if s != "-":
             logging.warning("Unsupported numerical value '%s', using 0", s)
-
         # Default to 0 if we can't parse the number (e.g. "-", "NaN", etc.)
         return 0
 
-def removeFiles(files):
+
+def removeFiles(files: List[str]) -> None:
+    """Remove a list of files from the filesystem."""
     for file in files:
         os.remove(file)
 
-def processPrefix(path, prefix, prefix_strip):
+
+def processPrefix(path: str, prefix: str, prefix_strip: int) -> str:
+    """Process GCOV_PREFIX and GCOV_PREFIX_STRIP logic."""
     p = Path(path)
     if p.exists() or not p.is_absolute():
         return path
@@ -326,7 +330,7 @@ def processPrefix(path, prefix, prefix_strip):
             logging.warning("Couldn't strip %i path levels from %s.", prefix_strip, path)
             return path
 
-        segments = segments[prefix_strip+1:]
+        segments = segments[prefix_strip + 1:]
         p = Path(segments[0])
         segments = segments[1:]
         for s in segments:
@@ -341,23 +345,35 @@ def processPrefix(path, prefix, prefix_strip):
     return str(p)
 
 
-def getFilteredCoverageFiles(coverage_files, exclude):
-    def excludeGcda(gcda):
+def getFilteredCoverageFiles(coverage_files: List[str], exclude: List[str]) -> List[str]:
+    """Filter out gcda/gcno files based on --exclude-gcda option."""
+    def excludeGcda(gcda: str) -> bool:
         for ex in exclude:
             if ex in gcda:
                 logging.debug("Omitting %s due to '--exclude-gcda %s'", gcda, ex)
                 return False
         return True
+
     return list(filter(excludeGcda, coverage_files))
 
-def globCoverageFiles(cwd, coverage_type):
-    return glob.glob(os.path.join(os.path.abspath(cwd), "**/*" + coverage_type), recursive=True)
 
-def findCoverageFiles(cwd, coverage_files, use_gcno):
+def globCoverageFiles(cwd: str, coverage_type: str) -> List[str]:
+    """Recursively find all files with given extension using glob."""
+    return glob.glob(
+        os.path.join(os.path.abspath(cwd), "**/*" + coverage_type),
+        recursive=True
+    )
+
+
+def findCoverageFiles(
+    cwd: str,
+    coverage_files: List[str],
+    use_gcno: bool
+) -> List[str]:
+    """Find coverage files (gcda or gcno) to process."""
     coverage_type = "user provided"
     if not coverage_files:
-        # gcov strips off extension of whatever you pass it and searches [extensionless name] + .gcno/.gcda
-        # We should pass either gcno or gcda, but not both - if you pass both it will be processed twice
+        # gcov strips off extension and searches for both .gcno/.gcda
         coverage_type = GCOV_GCNO_EXT if use_gcno else GCOV_GCDA_EXT
         coverage_files = globCoverageFiles(cwd, coverage_type)
 
