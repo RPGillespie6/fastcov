@@ -700,8 +700,18 @@ def exclProcessSource(
     # Source coverage changed
     return True
 
-def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip):
-    changed_sources = []
+def exclMarkerWorker(
+    data_q: multiprocessing.Queue,
+    fastcov_sources: Dict[str, Dict[str, TestCoverage]],
+    chunk: List[str],
+    exclude_branches_sw: List[str],
+    include_branches_sw: List[str],
+    exclude_line_marker: List[str],
+    fallback_encodings: List[str],
+    gcov_prefix: str,
+    gcov_prefix_strip: int
+) -> None:
+    changed_sources: List[Tuple[str, Dict[str, TestCoverage]]] = []
 
     for source in chunk:
         try:
@@ -717,19 +727,32 @@ def exclMarkerWorker(data_q, fastcov_sources, chunk, exclude_branches_sw, includ
     # Exit current process with appropriate code
     sys.exit(EXIT_CODE)
 
-def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_branches_sw, exclude_line_marker, min_chunk_size, fallback_encodings, gcov_prefix, gcov_prefix_strip):
+def processExclusionMarkers(
+    fastcov_json: FastcovReport,
+    jobs: int,
+    exclude_branches_sw: List[str],
+    include_branches_sw: List[str],
+    exclude_line_marker: List[str],
+    min_chunk_size: int,
+    fallback_encodings: List[str],
+    gcov_prefix: str,
+    gcov_prefix_strip: int
+) -> None:
     chunk_size = max(min_chunk_size, int(len(fastcov_json["sources"]) / jobs) + 1)
 
     processes = []
-    data_q    = multiprocessing.Queue()
+    data_q: multiprocessing.Queue = multiprocessing.Queue()
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
-        p = multiprocessing.Process(target=exclMarkerWorker, args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip))
+        p = multiprocessing.Process(
+            target=exclMarkerWorker,
+            args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip)
+        )
         processes.append(p)
         p.start()
 
     logging.info("Spawned {} exclusion marker scanning processes, each processing at most {} source files".format(len(processes), chunk_size))
 
-    changed_sources = []
+    changed_sources: List[Tuple[str, Dict[str, TestCoverage]]] = []
     for p in processes:
         changed_sources += data_q.get()
 
@@ -741,18 +764,26 @@ def processExclusionMarkers(fastcov_json, jobs, exclude_branches_sw, include_bra
     for changed_source in changed_sources:
         fastcov_json["sources"][changed_source[0]] = changed_source[1]
 
-def validateSources(fastcov_json, gcov_prefix, gcov_prefix_strip):
+def validateSources(
+    fastcov_json: FastcovReport,
+    gcov_prefix: str,
+    gcov_prefix_strip: int
+) -> None:
     logging.info("Checking if all sources exist")
     for source in fastcov_json["sources"].keys():
         source = processPrefix(source, gcov_prefix, gcov_prefix_strip)
         if not os.path.exists(source):
             logging.error("Cannot find '{}'".format(source))
 
-def distillFunction(function_raw, functions):
-    function_name   = function_raw["name"]
+
+def distillFunction(
+    function_raw: Dict[str, Any],
+    functions: Dict[str, FunctionData]
+) -> None:
+    function_name = function_raw["name"]
     # NOTE: need to explicitly cast all counts coming from gcov to int - this is because gcov's json library
     # will pass as scientific notation (i.e. 12+e45)
-    start_line      = int(function_raw["start_line"])
+    start_line = int(function_raw["start_line"])
     execution_count = int(function_raw["execution_count"])
     if function_name not in functions:
         functions[function_name] = {
@@ -762,14 +793,16 @@ def distillFunction(function_raw, functions):
     else:
         functions[function_name]["execution_count"] += execution_count
 
-def emptyBranchSet(branch1, branch2):
+def emptyBranchSet(branch1: Dict[str, Any], branch2: Dict[str, Any]) -> bool:
     return (branch1["count"] == 0 and branch2["count"] == 0)
 
-def matchingBranchSet(branch1, branch2):
+
+def matchingBranchSet(branch1: Dict[str, Any], branch2: Dict[str, Any]) -> bool:
     return (branch1["count"] == branch2["count"])
 
-def filterExceptionalBranches(branches):
-    filtered_branches = []
+
+def filterExceptionalBranches(branches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    filtered_branches: List[Dict[str, Any]] = []
     exception_branch = False
     for i in range(0, len(branches), 2):
         if i+1 >= len(branches):
