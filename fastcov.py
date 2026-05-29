@@ -104,7 +104,7 @@ class GcovFilterOptions(TypedDict):
 
 # ==================== Globals ====================
 
-FASTCOV_VERSION: Tuple[int, int] = (1, 17)
+FASTCOV_VERSION: Tuple[int, int] = (1, 18)
 MINIMUM_PYTHON: Tuple[int, int] = (3, 8)
 MINIMUM_GCOV: Tuple[int, int, int] = (9, 0, 0)
 
