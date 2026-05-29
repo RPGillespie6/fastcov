@@ -58,7 +58,7 @@ See the [example](example/) directory for a working CMake example.
 
 ## Installation
 
-A minimum of Python 3.5 is currently required (due to recursive `glob` usage).
+A minimum of Python 3.8 is currently required due to type hinting types such as TypedDict.
 
 Fastcov is a single source python tool. That means you can simply copy `fastcov.py` from this repository and run it directly with no other hassle.
 

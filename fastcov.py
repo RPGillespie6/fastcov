@@ -105,7 +105,7 @@ class GcovFilterOptions(TypedDict):
 # ==================== Globals ====================
 
 FASTCOV_VERSION: Tuple[int, int] = (1, 17)
-MINIMUM_PYTHON: Tuple[int, int] = (3, 5)
+MINIMUM_PYTHON: Tuple[int, int] = (3, 8)
 MINIMUM_GCOV: Tuple[int, int, int] = (9, 0, 0)
 
 # Interesting metrics
@@ -1132,7 +1132,6 @@ def getCombineCoverage(args: argparse.Namespace) -> FastcovReport:
 
 
 def getGcovCoverage(args: argparse.Namespace) -> FastcovReport:
-    # Need at least python 3.5 because of use of recursive glob
     checkPythonVersion(sys.version_info[0:2])
 
     # Need at least gcov 9.0.0 because that's when gcov JSON and stdout streaming was introduced
