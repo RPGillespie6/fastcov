@@ -9,6 +9,11 @@ on:
 jobs:
   Deploy-to-PyPI:
     runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
