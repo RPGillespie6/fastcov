@@ -475,8 +475,13 @@ def gcovWorker(
             continue
 
         if "current_working_directory" not in intermediate_json:
-            logging.error(f"Missing 'current_working_directory' for data file: {intermediate_json}")
-            setExitCode("missing_json_key")
+            gcda_path = intermediate_json.get("data_file", chunk[i] if i < len(chunk) else "?")
+            # gcov couldn't find source files — this usually means .gcno is
+            # missing from the .gcda directory.  If --gcno-dir was provided the
+            # symlink pre-pass should have fixed it; if not, warn and skip.
+            logging.warning(f"Missing 'current_working_directory' for '{os.path.basename(gcda_path)}' "
+                           f"— gcov could not find source files (try --gcno-directory)")
+            gcovs_skipped += 1
             continue
 
         intermediate_json_files = processGcovs(
@@ -1131,6 +1136,51 @@ def getCombineCoverage(args: argparse.Namespace) -> FastcovReport:
     return fastcov_json
 
 
+def symlinkMissingGcno(coverage_files: List[str], gcno_dir: str, search_dir: str) -> int:
+    """Symlink missing .gcno files from gcno_dir into .gcda directories.
+
+    When .gcda and .gcno files live in different directory trees (e.g. .gcda in
+    test case directories, .gcno in the build directory), gcov cannot find the
+    .gcno file and outputs incomplete JSON. This function finds each .gcda file
+    that is missing a sibling .gcno, locates the matching .gcno under gcno_dir
+    (mirroring the directory structure), and creates a symlink so gcov can
+    process the file correctly.
+
+    The matching uses os.path.relpath against search_dir for maximum accuracy
+    regardless of directory depth — the .gcda and .gcno trees must share the
+    same relative layout (as in CMake builds where both are derived from the
+    same CMakeLists.txt hierarchy).
+
+    Returns the number of symlinks created.
+    """
+    if not gcno_dir:
+        return 0
+
+    linked = 0
+    for gcda_path in coverage_files:
+        gcno_sibling = gcda_path.replace('.gcda', '.gcno')
+        if os.path.exists(gcno_sibling):
+            continue
+
+        # Compute the relative path from the search directory to this .gcda
+        # (e.g. "core/CMakeFiles/core.dir/foo.cpp.gcda") and substitute the
+        # extension to locate the matching .gcno under gcno_dir.
+        try:
+            rel = os.path.relpath(gcda_path, search_dir)
+        except ValueError:
+            continue
+
+        gcno_rel = rel.replace('.gcda', '.gcno')
+        src_gcno = os.path.join(gcno_dir, gcno_rel)
+
+        if os.path.exists(src_gcno):
+            os.symlink(src_gcno, gcno_sibling)
+            linked += 1
+            logging.debug(f"Symlinked .gcno: {src_gcno} -> {gcno_sibling}")
+
+    return linked
+
+
 def getGcovCoverage(args: argparse.Namespace) -> FastcovReport:
     checkPythonVersion(sys.version_info[0:2])
 
@@ -1144,6 +1194,14 @@ def getGcovCoverage(args: argparse.Namespace) -> FastcovReport:
     if args.excludepre:
         coverage_files = getFilteredCoverageFiles(coverage_files, args.excludepre)
         logging.info(f"Found {len(coverage_files)} coverage files after filtering")
+
+    # Auto-symlink missing .gcno files if --gcno-directory is provided
+    # This allows gcov to find both .gcda and .gcno when they live in
+    # separate directory trees (e.g. build/ dir vs test-case dir).
+    if args.gcno_dir and not args.use_gcno:
+        linked = symlinkMissingGcno(coverage_files, args.gcno_dir, args.directory)
+        if linked > 0:
+            logging.info(f"Symlinked {linked} missing .gcno files from '{args.gcno_dir}'")
 
     # We "zero" the "counters" by simply deleting all gcda files
     if args.zerocounters:
@@ -1250,6 +1308,7 @@ def parseArgs() -> argparse.Namespace:
 
     parser.add_argument('-d', '--search-directory', dest='directory', default=".", help='Base directory to recursively search for gcda files (default: .)')
     parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default="", help='Base directory compiler was invoked from (default: . or read from gcov)')
+    parser.add_argument('-G', '--gcno-directory', dest='gcno_dir', default="", help='Directory containing .gcno files. When set, fastcov symlinks missing .gcno files alongside corresponding .gcda files so gcov can find both. Use when .gcda and .gcno are in different directory trees.')
 
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help=f'Number of parallel gcov to spawn (default: {multiprocessing.cpu_count()}).')
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5).')
