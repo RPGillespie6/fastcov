@@ -566,8 +566,15 @@ def gcovWorker(
             gcda_name = os.path.basename(
                 intermediate_json.get("data_file", gcov_input[i] if i < len(gcov_input) else "?")
             )
+            # When processing .gcda files (normal mode), missing
+            # current_working_directory usually means the .gcno file is in a
+            # different tree — warn and skip gracefully.  When processing
+            # .gcno files (--process-gcno mode), the error is more likely
+            # genuine (corrupt/empty file), so preserve the error exit code.
             logging.warning(f"Missing 'current_working_directory' for '{gcda_name}' "
                            f"— gcov could not find source files (try --gcno-directory)")
+            if args.use_gcno:
+                setExitCode("missing_json_key")
             gcovs_skipped += 1
             continue
 
