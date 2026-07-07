@@ -198,7 +198,7 @@ cmp ${RUN_DIR}/multitest_nonbuild_dir.actual.info ${TEST_DIR}/expected_results/m
 popd
 
 # Test (error messages for missing sources)
-coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --validate-sources -o missing.json 2>&1 | grep 'Cannot find' | grep \"error\" | wc -l > missing_files_count.log
+coverage run -a ${TEST_DIR}/fastcov.py -C ${TEST_DIR}/expected_results/missing_files.json --validate-sources -o missing.json 2>&1 | grep 'Cannot find' | grep "error" | wc -l > missing_files_count.log
 mfc=$(cat missing_files_count.log)
 test "$mfc" -eq "2"
 
