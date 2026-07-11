@@ -1352,7 +1352,7 @@ def parseArgs() -> argparse.Namespace:
 
     parser.add_argument('-d', '--search-directory', dest='directory', default=".", help='Base directory to recursively search for gcda files (default: .)')
     parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default="", help='Base directory compiler was invoked from (default: . or read from gcov)')
-    parser.add_argument('-G', '--gcno-directory', dest='gcno_dir', default="", help='Directory containing .gcno files. When .gcda and .gcno are in separate directory trees, fastcv symlinks both into an ephemeral temp dir so gcov can find the .gcno sibling. Combine with -c to help gcov resolve relative source paths.')
+    parser.add_argument('-G', '--gcno-directory', dest='gcno_dir', default="", help='Directory containing .gcno files. When .gcda and .gcno are in separate directory trees, fastcov symlinks both into an ephemeral temp dir so gcov can find the .gcno sibling. Combine with -c to help gcov resolve relative source paths.')
 
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help=f'Number of parallel gcov to spawn (default: {multiprocessing.cpu_count()}).')
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5).')
