@@ -30,6 +30,8 @@ import time
 import fnmatch
 import logging
 import argparse
+import tempfile
+import shutil
 import subprocess
 import multiprocessing
 from pathlib import Path
@@ -432,6 +434,74 @@ def findCoverageFiles(
     return coverage_files
 
 
+def _pick_tmp_dir(estimated_need: int = 0, user_dir: str = "") -> str:
+    """Pick a temp directory with space check.
+
+    Prefers /dev/shm (tmpfs, RAM-backed) for performance, falls back to the
+    system temporary directory if /dev/shm has insufficient free space or is
+    unavailable.
+
+    *estimated_need* is a rough upper bound in bytes; if 0 it's treated as
+    "always use the preferred candidate".
+    """
+    if user_dir:
+        return user_dir
+
+    candidates = ["/dev/shm"]
+    for d in candidates:
+        try:
+            usage = shutil.disk_usage(d)
+            if estimated_need == 0 or usage.free >= estimated_need:
+                return d
+        except OSError:
+            continue
+
+    return tempfile.gettempdir()
+
+
+def _prepare_merged_chunk(
+    chunk: List[str],
+    gcno_dir: str,
+    search_dir: str,
+    tmpdir: str,
+) -> Tuple[str, List[str]]:
+    """Create a temporary directory with both .gcda and .gcno files.
+
+    When .gcda and .gcno live in separate directory trees (e.g. CMake build/
+    dir vs test-case dir), gcov cannot find the .gcno file and produces
+    incomplete JSON.  This function mirrors the common relative path structure
+    under *tmpdir* and symlinks both file types into it so that gcov finds
+    the .gcno sibling naturally.
+
+    Returns (*tmpdir*, *new_chunk*) where *new_chunk* contains the symlinked
+    paths gcov should receive.
+    """
+    new_chunk: List[str] = []
+    for gcda_path in chunk:
+        rel = os.path.relpath(gcda_path, search_dir)
+
+        dst_gcda = os.path.join(tmpdir, rel)
+        os.makedirs(os.path.dirname(dst_gcda), exist_ok=True)
+        os.symlink(gcda_path, dst_gcda)
+        new_chunk.append(dst_gcda)
+
+        # Mirror the matching .gcno alongside it
+        gcno_rel = rel.replace('.gcda', '.gcno')
+        src_gcno = os.path.join(gcno_dir, gcno_rel)
+        if os.path.exists(src_gcno):
+            dst_gcno = os.path.join(tmpdir, gcno_rel)
+            os.makedirs(os.path.dirname(dst_gcno), exist_ok=True)
+            os.symlink(src_gcno, dst_gcno)
+
+    return tmpdir, new_chunk
+
+
+def _cleanup_tmpdir(tmpdir: Optional[str]) -> None:
+    """Remove a temporary directory created by _prepare_merged_chunk."""
+    if tmpdir is not None:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def gcovWorker(
     data_q: multiprocessing.Queue,
     metrics_q: multiprocessing.Queue,
@@ -443,6 +513,7 @@ def gcovWorker(
     base_report: FastcovReport = {"sources": {}}
     gcovs_total = 0
     gcovs_skipped = 0
+    tmpdir = None
 
     gcov_bin = args.gcov
     gcov_args = ["--json-format", "--stdout"]
@@ -452,8 +523,24 @@ def gcovWorker(
     encoding = sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'
     workdir = args.cdirectory if args.cdirectory else "."
 
+    # When --gcno-dir is set, build an ephemeral merged directory so gcov can
+    # find both .gcda and .gcno side by side.  /dev/shm (tmpfs) is preferred
+    # for performance; fall back to system temp if unavailable.
+    gcno_dir = getattr(args, 'gcno_dir', "")
+    if gcno_dir:
+        tmpdir = tempfile.mkdtemp(
+            prefix="fastcov_",
+            dir=_pick_tmp_dir(len(chunk) * 65536, gcno_dir),
+        )
+        _, merged_chunk = _prepare_merged_chunk(
+            chunk, gcno_dir, args.directory, tmpdir,
+        )
+        gcov_input = merged_chunk
+    else:
+        gcov_input = chunk
+
     p = subprocess.Popen(
-        [gcov_bin] + gcov_args + chunk,
+        [gcov_bin] + gcov_args + gcov_input,
         cwd=workdir,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL
@@ -463,20 +550,32 @@ def gcovWorker(
     if p.stdout is None:
         logging.error("Failed to get stdout from gcov process")
         setExitCode("bad_chunk_file")
+        _cleanup_tmpdir(tmpdir)
         return
 
     for i, line in enumerate(iter(p.stdout.readline, b'')):
         try:
             intermediate_json = cast(GcovJsonOutput, json.loads(line.decode(encoding)))
         except json.decoder.JSONDecodeError as e:
-            logging.error(f"Could not process chunk file '{chunk[i]}' ({i+1}/{len(chunk)})")
+            logging.error(f"Could not process chunk file '{gcov_input[i]}' ({i+1}/{len(gcov_input)})")
             logging.error(str(e))
             setExitCode("bad_chunk_file")
             continue
 
         if "current_working_directory" not in intermediate_json:
-            logging.error(f"Missing 'current_working_directory' for data file: {intermediate_json}")
-            setExitCode("missing_json_key")
+            gcda_name = os.path.basename(
+                intermediate_json.get("data_file", gcov_input[i] if i < len(gcov_input) else "?")
+            )
+            # When processing .gcda files (normal mode), missing
+            # current_working_directory usually means the .gcno file is in a
+            # different tree — warn and skip gracefully.  When processing
+            # .gcno files (--process-gcno mode), the error is more likely
+            # genuine (corrupt/empty file), so preserve the error exit code.
+            logging.warning(f"Missing 'current_working_directory' for '{gcda_name}' "
+                           f"— gcov could not find source files (try --gcno-directory)")
+            if args.use_gcno:
+                setExitCode("missing_json_key")
+            gcovs_skipped += 1
             continue
 
         intermediate_json_files = processGcovs(
@@ -493,6 +592,9 @@ def gcovWorker(
         gcovs_skipped += len(intermediate_json["files"]) - len(intermediate_json_files)
 
     p.wait()
+
+    _cleanup_tmpdir(tmpdir)
+
     data_q.put(base_report)
     metrics_q.put((gcovs_total, gcovs_skipped))
 
@@ -1250,6 +1352,7 @@ def parseArgs() -> argparse.Namespace:
 
     parser.add_argument('-d', '--search-directory', dest='directory', default=".", help='Base directory to recursively search for gcda files (default: .)')
     parser.add_argument('-c', '--compiler-directory', dest='cdirectory', default="", help='Base directory compiler was invoked from (default: . or read from gcov)')
+    parser.add_argument('-G', '--gcno-directory', dest='gcno_dir', default="", help='Directory containing .gcno files. When .gcda and .gcno are in separate directory trees, fastcv symlinks both into an ephemeral temp dir so gcov can find the .gcno sibling. Combine with -c to help gcov resolve relative source paths.')
 
     parser.add_argument('-j', '--jobs', dest='jobs', type=int, default=multiprocessing.cpu_count(), help=f'Number of parallel gcov to spawn (default: {multiprocessing.cpu_count()}).')
     parser.add_argument('-m', '--minimum-chunk-size', dest='minimum_chunk', type=int, default=5, help='Minimum number of files a thread should process (default: 5).')

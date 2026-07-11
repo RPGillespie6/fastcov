@@ -233,6 +233,37 @@ rc=0
 coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 --process-gcno || rc=$?
 test $rc -eq 8
 
+# Test --gcno-directory: split .gcda/.gcno, verify recovery
+# 1. Generate reference output (normal run, .gcda and .gcno in build dir together)
+REFERENCE_FILE="${PWD}/test_gcno_dir_reference.actual.info"
+GCNO_DIR="${PWD}"
+GCDA_TMP="${PWD}/../gcda_separate"
+rm -rf "${GCDA_TMP}"
+
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 \
+    --exclude cmake_project/test/ \
+    --lcov -o "${REFERENCE_FILE}"
+
+# 2. Move .gcda to a separate directory tree (simulating split build/test-case)
+find . -name '*.gcda' -type f | while read f; do
+    mkdir -p "${GCDA_TMP}/$(dirname "$f")"
+    cp "$f" "${GCDA_TMP}/${f}"
+    rm "$f"
+done
+
+# 3. Run fastcov with --gcno-dir pointing back to build tree
+coverage run -a ${TEST_DIR}/fastcov.py --gcov gcov-9 \
+    --search-directory "${GCDA_TMP}" \
+    --gcno-directory "${GCNO_DIR}" \
+    --exclude cmake_project/test/ \
+    --lcov -o test_gcno_dir.actual.info
+
+# 4. Output must match the reference (normal run)
+cmp test_gcno_dir.actual.info "${REFERENCE_FILE}"
+
+# Cleanup
+rm -rf "${GCDA_TMP}"
+
 # Write out coverage as xml
 coverage combine
 coverage xml -o coverage.xml
