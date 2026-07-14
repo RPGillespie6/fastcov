@@ -20,15 +20,7 @@ A few prerequisites apply before you can run fastcov:
 
 1. GCC version >= 9.0.0
 
-These versions of GCOV have support for JSON intermediate format as well as streaming report data straight to stdout. This second feature (the ability for gcov to stream report data to stdout) is critical - without it, fastcov cannot run multiple instances of gcov in parallel without loss of correctness.
-
-If your linux distribution doesn't ship with GCC 9, the current easiest way (in my opinion) to try out fastcov is to use the fastcov docker image, which has GCC 9 compilers (`gcc-9` and `g++-9`), Python3, and CMake inside:
-
-```bash
-docker pull rpgillespie6/fastcov:latest
-```
-
-If you need other dependencies, just modify the Dockerfile and rebuild.
+GCC 9 was the version that introduced support for JSON intermediate format as well as streaming report data straight to stdout. This second feature (the ability for gcov to stream report data to stdout) is critical - without it, fastcov cannot run multiple instances of gcov in parallel without loss of correctness.
 
 2. Object files must be either be built:
 
@@ -42,14 +34,10 @@ If you use CMake, you are almost certainly satisfying this second constraint (un
 
 ## Quick Start
 
-Assuming you have docker, fastcov is easy to use:
+Assuming you have a local copy of fastcov, it's easy to use:
 
 ```bash
-$ docker pull rpgillespie6/fastcov
-$ docker run -it --rm -v ${PWD}:/mnt/workspace -w /mnt/workspace -u $(id -u ${USER}):$(id -g ${USER}) rpgillespie6/fastcov
-$ <build project> # Make sure to compile with gcc-9 or g++-9 and to pass "-g -O0 -fprofile-arcs -ftest-coverage" to all gcc/g++ statements
-$ <run unit tests>
-$ fastcov.py --gcov gcov-9 --exclude /usr/include --lcov -o report.info
+$ python3 fastcov.py --exclude /usr/include --lcov -o report.info
 $ genhtml -o code_coverage report.info
 $ firefox code_coverage/index.html
 ```
@@ -58,7 +46,7 @@ See the [example](example/) directory for a working CMake example.
 
 ## Installation
 
-A minimum of Python 3.8 is currently required due to type hinting types such as TypedDict.
+A minimum of Python 3.10 is currently required. Older versions of fastcov will work with older versions of Python 3.
 
 Fastcov is a single source python tool. That means you can simply copy `fastcov.py` from this repository and run it directly with no other hassle.
 
