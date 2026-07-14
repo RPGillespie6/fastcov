@@ -11,10 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Pull Docker Image
-        run: docker pull rpgillespie6/fastcov
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Build test image
+        run: sudo podman build -t fastcov-testenv .
+
       - name: Run Tests
-        run: docker run -v "$PWD":/mnt/workspace -w /mnt/workspace rpgillespie6/fastcov bash -c "cd ./test && ./run_tests.sh"
+        run: sudo podman run --rm -v "${PWD}:/mnt/workspace" -w /mnt/workspace/test fastcov-testenv ./run_tests.sh
+
       - name: Upload Coverage
         run: bash <(curl -s https://codecov.io/bash) -X gcov -X coveragepy -f test/functional/cmake_project/build/coverage.xml -f test/unit/coverage.xml
 

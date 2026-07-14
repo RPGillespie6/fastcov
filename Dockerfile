@@ -1,12 +1,24 @@
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
-ENV TZ=Europe/Berlin
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/opt/venv/bin:${PATH}"
 
-LABEL org.opencontainers.image.authors="Bryan Gillespie <rpgillespie6@gmail.com>"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        cmake \
+        file \
+        g++ \
+        gcc \
+        lcov \
+        ninja-build \
+        python3 \
+        python3-pip \
+        python3-venv \
+    && python3 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir coverage pytest pytest-cov \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
-    echo $TZ > /etc/timezone && \
-    DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y g++ python3 python3-pip cmake ninja-build lcov && \
-    pip3 install pytest pytest-cov
+WORKDIR /mnt/workspace

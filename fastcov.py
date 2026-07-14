@@ -19,8 +19,6 @@
         $ genhtml -o code_coverage report.info
 """
 
-from __future__ import annotations
-
 import re
 import os
 import sys
@@ -36,8 +34,7 @@ import subprocess
 import multiprocessing
 from pathlib import Path
 from collections.abc import Iterable
-from typing import Dict, List, Set, Tuple, TypedDict, Optional, Union, cast, Any
-
+from typing import Dict, List, Set, Tuple, TypedDict, Optional, cast, Any
 
 # ==================== Type Definitions ====================
 
@@ -772,7 +769,7 @@ def getSourceLines(source: str, fallback_encodings: Optional[List[str]] = None) 
     """Return a list of lines from the provided source, trying to decode with fallback encodings if the default fails."""
     if fallback_encodings is None:
         fallback_encodings = []
-    
+
     default_encoding = sys.getdefaultencoding()
     for encoding in [default_encoding] + fallback_encodings:
         try:
@@ -856,7 +853,7 @@ def exclProcessSource(
                     for line_num in list(fastcov_data["lines"].keys()):
                         if start_line <= line_num <= end_line:
                             fastcov_data["lines"].pop(line_num)
-                    
+
                     for line_num in list(fastcov_data["branches"].keys()):
                         if start_line <= line_num <= end_line:
                             fastcov_data["branches"].pop(line_num)
@@ -887,7 +884,7 @@ def exclMarkerWorker(
 
     for source in chunk:
         try:
-            if exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw, 
+            if exclProcessSource(fastcov_sources, source, exclude_branches_sw, include_branches_sw,
                                 exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip):
                 changed_sources.append((source, fastcov_sources[source]))
         except FileNotFoundError:
@@ -919,7 +916,7 @@ def processExclusionMarkers(
     for chunk in chunks(list(fastcov_json["sources"].keys()), chunk_size):
         p = multiprocessing.Process(
             target=exclMarkerWorker,
-            args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw, 
+            args=(data_q, fastcov_json["sources"], chunk, exclude_branches_sw, include_branches_sw,
                   exclude_line_marker, fallback_encodings, gcov_prefix, gcov_prefix_strip)
         )
         processes.append(p)
@@ -1102,7 +1099,7 @@ def addLists(list1: List[int], list2: List[int]) -> List[int]:
 def combineReports(base: FastcovReport, overlay: FastcovReport) -> None:
     base_sources = base.get("sources", {})
     overlay_sources = overlay.get("sources", {})
-    
+
     for source, scov in overlay_sources.items():
         # Combine Source Coverage
         if source not in base_sources:
@@ -1117,7 +1114,7 @@ def combineReports(base: FastcovReport, overlay: FastcovReport) -> None:
 
             # Get the existing test coverage data
             base_test_data = base_sources[source][test_name]
-            
+
             # Combine Line Coverage
             base_test_data["lines"] = addDicts(base_test_data["lines"], tcov["lines"])
 
