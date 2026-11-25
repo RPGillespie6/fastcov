@@ -34,7 +34,7 @@ import subprocess
 import multiprocessing
 from pathlib import Path
 from collections.abc import Iterable
-from typing import Dict, List, Set, Tuple, TypedDict, Optional, cast, Any
+from typing import Dict, List, Set, Tuple, TypedDict, Optional, cast, Any, Final
 
 # ==================== Type Definitions ====================
 
@@ -111,6 +111,11 @@ MINIMUM_GCOV: Tuple[int, int, int] = (9, 0, 0)
 START_TIME: float = time.monotonic()
 GCOVS_TOTAL: int = 0
 GCOVS_SKIPPED: int = 0
+
+# A worker flushes its partial report after this many new coverage entries so the
+# parent can merge it while gcov is still running. A few hundred thousand dict
+# entries is on the order of 64MB, which is the copy we no longer want to keep.
+PARTIAL_REPORT_ENTRY_BUDGET: Final = 300_000
 
 # Gcov Coverage File Extensions
 GCOV_GCNO_EXT: str = ".gcno"  # gcno = "[gc]ov [no]te"
@@ -499,6 +504,11 @@ def _cleanup_tmpdir(tmpdir: Optional[str]) -> None:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def _flushPartial(data_q: multiprocessing.Queue, report: FastcovReport) -> FastcovReport:
+    data_q.put(report)
+    return {"sources": {}}
+
+
 def gcovWorker(
     data_q: multiprocessing.Queue,
     metrics_q: multiprocessing.Queue,
@@ -508,92 +518,99 @@ def gcovWorker(
 ) -> None:
     """Worker process that runs gcov on a chunk of files and returns coverage data."""
     base_report: FastcovReport = {"sources": {}}
+    pending_entries = 0
     gcovs_total = 0
     gcovs_skipped = 0
     tmpdir = None
 
-    gcov_bin = args.gcov
-    gcov_args = ["--json-format", "--stdout"]
-    if getattr(args, 'branchcoverage', False) or getattr(args, 'xbranchcoverage', False):
-        gcov_args.append("--branch-probabilities")
+    try:
+        gcov_bin = args.gcov
+        gcov_args = ["--json-format", "--stdout"]
+        if getattr(args, 'branchcoverage', False) or getattr(args, 'xbranchcoverage', False):
+            gcov_args.append("--branch-probabilities")
 
-    encoding = sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'
-    workdir = args.cdirectory if args.cdirectory else "."
+        encoding = sys.stdout.encoding if sys.stdout.encoding else 'UTF-8'
+        workdir = args.cdirectory if args.cdirectory else "."
 
-    # When --gcno-dir is set, build an ephemeral merged directory so gcov can
-    # find both .gcda and .gcno side by side.  /dev/shm (tmpfs) is preferred
-    # for performance; fall back to system temp if unavailable.
-    gcno_dir = getattr(args, 'gcno_dir', "")
-    if gcno_dir:
-        tmpdir = tempfile.mkdtemp(
-            prefix="fastcov_",
-            dir=_pick_tmp_dir(len(chunk) * 65536, gcno_dir),
-        )
-        _, merged_chunk = _prepare_merged_chunk(
-            chunk, gcno_dir, args.directory, tmpdir,
-        )
-        gcov_input = merged_chunk
-    else:
-        gcov_input = chunk
-
-    p = subprocess.Popen(
-        [gcov_bin] + gcov_args + gcov_input,
-        cwd=workdir,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL
-    )
-
-    # Ensure stdout is not None
-    if p.stdout is None:
-        logging.error("Failed to get stdout from gcov process")
-        setExitCode("bad_chunk_file")
-        _cleanup_tmpdir(tmpdir)
-        return
-
-    for i, line in enumerate(iter(p.stdout.readline, b'')):
-        try:
-            intermediate_json = cast(GcovJsonOutput, json.loads(line.decode(encoding)))
-        except json.decoder.JSONDecodeError as e:
-            logging.error(f"Could not process chunk file '{gcov_input[i]}' ({i+1}/{len(gcov_input)})")
-            logging.error(str(e))
-            setExitCode("bad_chunk_file")
-            continue
-
-        if "current_working_directory" not in intermediate_json:
-            gcda_name = os.path.basename(
-                intermediate_json.get("data_file", gcov_input[i] if i < len(gcov_input) else "?")
+        # When --gcno-dir is set, build an ephemeral merged directory so gcov can
+        # find both .gcda and .gcno side by side.  /dev/shm (tmpfs) is preferred
+        # for performance; fall back to system temp if unavailable.
+        gcno_dir = getattr(args, 'gcno_dir', "")
+        if gcno_dir:
+            tmpdir = tempfile.mkdtemp(
+                prefix="fastcov_",
+                dir=_pick_tmp_dir(len(chunk) * 65536, gcno_dir),
             )
-            # When processing .gcda files (normal mode), missing
-            # current_working_directory usually means the .gcno file is in a
-            # different tree — warn and skip gracefully.  When processing
-            # .gcno files (--process-gcno mode), the error is more likely
-            # genuine (corrupt/empty file), so preserve the error exit code.
-            logging.warning(f"Missing 'current_working_directory' for '{gcda_name}' "
-                           f"— gcov could not find source files (try --gcno-directory)")
-            if args.use_gcno:
-                setExitCode("missing_json_key")
-            gcovs_skipped += 1
-            continue
+            _, merged_chunk = _prepare_merged_chunk(
+                chunk, gcno_dir, args.directory, tmpdir,
+            )
+            gcov_input = merged_chunk
+        else:
+            gcov_input = chunk
 
-        intermediate_json_files = processGcovs(
-            args.cdirectory,
-            intermediate_json["files"],
-            intermediate_json["current_working_directory"],
-            gcov_filter_options
+        p = subprocess.Popen(
+            [gcov_bin] + gcov_args + gcov_input,
+            cwd=workdir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
         )
 
-        for f in intermediate_json_files:
-            distillSource(f, base_report["sources"], args.test_name, getattr(args, 'xbranchcoverage', False))
+        # Ensure stdout is not None
+        if p.stdout is None:
+            logging.error("Failed to get stdout from gcov process")
+            setExitCode("bad_chunk_file")
+            return
 
-        gcovs_total += len(intermediate_json["files"])
-        gcovs_skipped += len(intermediate_json["files"]) - len(intermediate_json_files)
+        for i, line in enumerate(iter(p.stdout.readline, b'')):
+            try:
+                intermediate_json = cast(GcovJsonOutput, json.loads(line.decode(encoding)))
+            except json.decoder.JSONDecodeError as e:
+                logging.error(f"Could not process chunk file '{gcov_input[i]}' ({i+1}/{len(gcov_input)})")
+                logging.error(str(e))
+                setExitCode("bad_chunk_file")
+                continue
 
-    p.wait()
+            if "current_working_directory" not in intermediate_json:
+                gcda_name = os.path.basename(
+                    intermediate_json.get("data_file", gcov_input[i] if i < len(gcov_input) else "?")
+                )
+                # When processing .gcda files (normal mode), missing
+                # current_working_directory usually means the .gcno file is in a
+                # different tree — warn and skip gracefully.  When processing
+                # .gcno files (--process-gcno mode), the error is more likely
+                # genuine (corrupt/empty file), so preserve the error exit code.
+                logging.warning(f"Missing 'current_working_directory' for '{gcda_name}' "
+                               f"— gcov could not find source files (try --gcno-directory)")
+                if args.use_gcno:
+                    setExitCode("missing_json_key")
+                gcovs_skipped += 1
+                continue
 
-    _cleanup_tmpdir(tmpdir)
+            intermediate_json_files = processGcovs(
+                args.cdirectory,
+                intermediate_json["files"],
+                intermediate_json["current_working_directory"],
+                gcov_filter_options
+            )
 
-    data_q.put(base_report)
-    metrics_q.put((gcovs_total, gcovs_skipped))
+            for f in intermediate_json_files:
+                pending_entries += distillSource(
+                    f, base_report["sources"], args.test_name, getattr(args, 'xbranchcoverage', False)
+                )
+                if pending_entries >= PARTIAL_REPORT_ENTRY_BUDGET:
+                    base_report = _flushPartial(data_q, base_report)
+                    pending_entries = 0
+
+            gcovs_total += len(intermediate_json["files"])
+            gcovs_skipped += len(intermediate_json["files"]) - len(intermediate_json_files)
+
+        p.wait()
+    finally:
+        _cleanup_tmpdir(tmpdir)
+        if base_report["sources"]:
+            data_q.put(base_report)
+        metrics_q.put((gcovs_total, gcovs_skipped))
+        data_q.put(None)
 
     sys.exit(EXIT_CODE)
 
@@ -607,7 +624,9 @@ def processGcdas(
     chunk_size = max(args.minimum_chunk, int(len(coverage_files) / args.jobs) + 1)
 
     processes = []
-    data_q: multiprocessing.Queue = multiprocessing.Queue()
+    # Two slots: the partial being merged plus one pickled ahead of it. Workers
+    # block here rather than accumulating one full report per core.
+    data_q: multiprocessing.Queue = multiprocessing.Queue(maxsize=2)
     metrics_q: multiprocessing.Queue = multiprocessing.Queue()
 
     for chunk in chunks(coverage_files, chunk_size):
@@ -620,20 +639,20 @@ def processGcdas(
 
     logging.info(f"Spawned {len(processes)} gcov processes, each processing at most {chunk_size} coverage files")
 
-    fastcov_jsons: List[FastcovReport] = []
-    for _ in processes:
-        fastcov_jsons.append(cast(FastcovReport, data_q.get()))
-        incrementCounters(*metrics_q.get())
+    base_fastcov: FastcovReport = {"sources": {}}
+    remaining = len(processes)
+    while remaining:
+        partial = data_q.get()
+        if partial is None:
+            remaining -= 1
+            incrementCounters(*metrics_q.get())
+            continue
+        combineReports(base_fastcov, partial)
 
     for p in processes:
         p.join()
         if p.exitcode is not None and p.exitcode != 0:
             setExitCodeRaw(p.exitcode)
-
-    # Combine all results
-    base_fastcov = fastcov_jsons.pop()
-    for fj in fastcov_jsons:
-        combineReports(base_fastcov, fj)
 
     return base_fastcov
 
@@ -952,7 +971,8 @@ def validateSources(
 def distillFunction(
     function_raw: GcovFunction,
     functions: Dict[str, FunctionData]
-) -> None:
+) -> int:
+    """Record one function's execution count. Returns 1 when a new entry was stored."""
     function_name = function_raw["name"]
     start_line = int(function_raw["start_line"])
     execution_count = int(function_raw["execution_count"])
@@ -961,8 +981,9 @@ def distillFunction(
             "start_line": start_line,
             "execution_count": execution_count
         }
-    else:
-        functions[function_name]["execution_count"] += execution_count
+        return 1
+    functions[function_name]["execution_count"] += execution_count
+    return 0
 
 
 def emptyBranchSet(branch1: GcovBranch, branch2: GcovBranch) -> bool:
@@ -1001,7 +1022,9 @@ def distillLine(
     lines: Dict[int, int],
     branches: Dict[int, List[int]],
     include_exceptional_branches: bool
-) -> None:
+) -> int:
+    """Record one line's hit count and branches. Returns how many new entries were stored."""
+    added = 0
     line_number = int(line_raw["line_number"])
     count = int(line_raw["count"])
     if count < 0:
@@ -1013,6 +1036,7 @@ def distillLine(
 
     if line_number not in lines:
         lines[line_number] = count
+        added += 1
     else:
         lines[line_number] += count
 
@@ -1025,12 +1049,15 @@ def distillLine(
     for i, branch in enumerate(branches_to_process):
         if line_number not in branches:
             branches[line_number] = []
+            added += 1
         blen = len(branches[line_number])
         glen = len(branches_to_process)
         if blen < glen:
             branches[line_number] += [0] * (glen - blen)
+            added += glen - blen
         # branch["count"] is int from GcovBranch
         branches[line_number][i] += int(branch["count"])
+    return added
 
 
 def distillSource(
@@ -1038,7 +1065,9 @@ def distillSource(
     sources: Dict[str, Dict[str, TestCoverage]],
     test_name: str,
     include_exceptional_branches: bool
-) -> None:
+) -> int:
+    """Fold one gcov file into the report. Returns how many new entries were stored."""
+    added = 0
     source_name = source_raw["file_abs"]
     if source_name not in sources:
         sources[source_name] = {
@@ -1048,17 +1077,19 @@ def distillSource(
                 "lines": {}
             }
         }
+        added += 1
 
     for function in source_raw["functions"]:
-        distillFunction(function, sources[source_name][test_name]["functions"])
+        added += distillFunction(function, sources[source_name][test_name]["functions"])
 
     for line in source_raw["lines"]:
-        distillLine(
+        added += distillLine(
             line,
             sources[source_name][test_name]["lines"],
             sources[source_name][test_name]["branches"],
             include_exceptional_branches
         )
+    return added
 
 
 def dumpToJson(intermediate: FastcovReport, output: str) -> None:
@@ -1076,24 +1107,22 @@ def getGcovFilterOptions(args: argparse.Namespace) -> GcovFilterOptions:
 
 
 def addDicts(dict1: Dict[int, int], dict2: Dict[int, int]) -> Dict[int, int]:
-    """Add dicts together by value."""
-    result = dict1.copy()
+    """Add dict2's values into dict1 and return dict1. dict2 is not modified."""
     for k, v in dict2.items():
-        result[k] = result.get(k, 0) + v
-    return result
+        dict1[k] = dict1.get(k, 0) + v
+    return dict1
 
 
 def addLists(list1: List[int], list2: List[int]) -> List[int]:
-    """Add lists together by value."""
-    blist = list(list2)
-    slist = list(list1)
-    if len(list1) > len(list2):
-        blist, slist = slist, blist
+    """Add list2 onto list1 by index and return list1. list2 is not modified.
 
-    for i, b in enumerate(slist):
-        blist[i] += b
-
-    return blist
+    list1 is extended with zeros when list2 is longer, so no second list is allocated.
+    """
+    if len(list2) > len(list1):
+        list1.extend([0] * (len(list2) - len(list1)))
+    for i, value in enumerate(list2):
+        list1[i] += value
+    return list1
 
 
 def combineReports(base: FastcovReport, overlay: FastcovReport) -> None:
